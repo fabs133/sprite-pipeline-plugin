@@ -43,8 +43,10 @@
    - **Icon URL**: `https://raw.githubusercontent.com/fabs133/sprite-pipeline-plugin/master/addons/sprite_pipeline/icon.png`
 
    **Additional Details:**
-   - **Browse URL**: `https://github.com/fabs133/sprite-pipeline-plugin/tree/v1.0.0/addons/sprite_pipeline`
+   - **Browse URL**: `https://github.com/fabs133/sprite-pipeline-plugin/tree/master/addons/sprite_pipeline`
    - **Support Level**: `community`
+
+   **IMPORTANT:** Browse URL must use `master` branch, NOT tag reference like `v1.0.0`. Asset Library rejects Git tags.
 
 4. **Add Screenshots** (optional but recommended)
    - Take screenshots of:
