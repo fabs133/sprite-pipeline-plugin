@@ -30,10 +30,10 @@
    - **License**: `MIT`
    - **Repository URL**: `https://github.com/fabs133/sprite-pipeline-plugin`
    - **Issues URL**: `https://github.com/fabs133/sprite-pipeline-plugin/issues`
-   - **Download URL**: `https://github.com/fabs133/sprite-pipeline-plugin/archive/refs/tags/v1.0.0.zip`
-
-   **Or use the prepared ZIP:**
+   - **Download Provider**: `Custom` (or GitHub Releases)
    - **Download URL**: `https://github.com/fabs133/sprite-pipeline-plugin/releases/download/v1.0.0/sprite-pipeline-v1.0.0.zip`
+
+   **IMPORTANT:** Use the GitHub Releases URL above, NOT the archive/tags URL. Godot Asset Library no longer accepts Git tags.
 
    **Version Information:**
    - **Version String**: `1.0.0`
