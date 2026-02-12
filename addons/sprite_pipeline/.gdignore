@@ -1,0 +1,2 @@
+# Exclude plugin files from being imported by Godot
+# This file prevents Godot from treating plugin source files as game assets
