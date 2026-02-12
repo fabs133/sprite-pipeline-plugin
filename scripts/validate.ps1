@@ -85,7 +85,7 @@ function Test-NoAPIKeys {
     $suspiciousPatterns = @(
         'sk-[a-zA-Z0-9]{20,}',
         'Bearer [a-zA-Z0-9\-_]+\.[a-zA-Z0-9\-_]+',
-        'api[_-]?key\s*=\s*["\'][^"\']{20,}["\']'
+        'api[_-]?key\s*=\s*["''][^"'']{20,}["'']'
     )
 
     $foundKeys = @()
