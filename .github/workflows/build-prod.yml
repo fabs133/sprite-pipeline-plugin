@@ -1,0 +1,167 @@
+name: Build Production Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., 1.0.0)'
+        required: true
+        type: string
+
+jobs:
+  build-prod:
+    name: Build Production Release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $version = "${{ github.event.inputs.version }}"
+            Write-Host "Using manual version: $version"
+          } else {
+            $version = "${{ github.ref_name }}".TrimStart('v')
+            Write-Host "Using tag version: $version"
+          }
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Validate version format
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.VERSION }}"
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            Write-Error "Invalid version format: $version (expected x.y.z)"
+            exit 1
+          }
+          Write-Host "✅ Version format valid: $version"
+
+      - name: Check version consistency
+        shell: pwsh
+        run: |
+          $tagVersion = "${{ steps.version.outputs.VERSION }}"
+          $content = Get-Content "addons/sprite_pipeline/plugin.cfg" -Raw
+          if ($content -match 'version="([^"]+)"') {
+            $cfgVersion = $Matches[1]
+            if ($tagVersion -ne $cfgVersion) {
+              Write-Warning "Version mismatch: tag=$tagVersion, cfg=$cfgVersion"
+              Write-Host "Updating plugin.cfg version to match tag..."
+              $content = $content -replace 'version="[^"]+"', "version=`"$tagVersion`""
+              $content | Set-Content "addons/sprite_pipeline/plugin.cfg" -NoNewline
+            }
+          }
+
+      - name: Run validation (strict mode)
+        shell: pwsh
+        run: |
+          .\scripts\validate.ps1 -Strict
+
+      - name: Build production release
+        shell: pwsh
+        run: |
+          .\scripts\build.ps1 -Mode prod -Version ${{ steps.version.outputs.VERSION }}
+
+      - name: Calculate checksums
+        shell: pwsh
+        run: |
+          $zipFile = "dist/sprite-pipeline-v${{ steps.version.outputs.VERSION }}.zip"
+          $hash = Get-FileHash $zipFile -Algorithm SHA256
+          $hashSha512 = Get-FileHash $zipFile -Algorithm SHA512
+
+          @"
+          # Sprite Pipeline v${{ steps.version.outputs.VERSION }}
+
+          ## SHA256
+          $($hash.Hash)  $(Split-Path $zipFile -Leaf)
+
+          ## SHA512
+          $($hashSha512.Hash)  $(Split-Path $zipFile -Leaf)
+          "@ | Out-File -FilePath "dist/SHA256SUMS" -Encoding UTF8
+
+          Write-Host "Checksums calculated"
+
+      - name: Extract changelog for this version
+        id: changelog
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.VERSION }}"
+          $changelog = Get-Content "addons/sprite_pipeline/CHANGELOG.md" -Raw
+
+          # Extract section for this version
+          $pattern = "## \[$version\].*?(?=## \[|$)"
+          if ($changelog -match $pattern) {
+            $versionLog = $Matches[0]
+            # Escape for GitHub Actions
+            $versionLog = $versionLog -replace '%','%25' -replace '\n','%0A' -replace '\r','%0D'
+            echo "NOTES=$versionLog" >> $env:GITHUB_OUTPUT
+          } else {
+            echo "NOTES=No changelog found for version $version" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sprite-pipeline-prod-${{ steps.version.outputs.VERSION }}
+          path: |
+            dist/*.zip
+            dist/SHA256SUMS
+          retention-days: 90
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.version.outputs.VERSION }}
+          name: Sprite Pipeline v${{ steps.version.outputs.VERSION }}
+          draft: false
+          prerelease: false
+          files: |
+            dist/*.zip
+            dist/SHA256SUMS
+          body: |
+            # Sprite Pipeline v${{ steps.version.outputs.VERSION }}
+
+            AI-powered sprite generation plugin for Godot 4.2+
+
+            ## 📦 Installation
+
+            ### Option 1: Godot Asset Library
+            1. Open Godot Editor → AssetLib tab
+            2. Search for "Sprite Pipeline"
+            3. Click Download → Install
+
+            ### Option 2: Manual Install
+            1. Download `sprite-pipeline-v${{ steps.version.outputs.VERSION }}.zip` below
+            2. Extract to your project's `addons/` folder
+            3. Enable in Project → Project Settings → Plugins
+
+            ## 📖 Documentation
+
+            - [README](https://github.com/fabs133/sprite-pipeline-plugin/blob/main/addons/sprite_pipeline/README.md)
+            - [Wiki](https://github.com/fabs133/sprite-pipeline-plugin/wiki)
+            - [Troubleshooting](https://github.com/fabs133/sprite-pipeline-plugin/wiki/Troubleshooting)
+
+            ## 🔐 Checksums
+
+            See `SHA256SUMS` file for verification.
+
+            ---
+
+            ${{ steps.changelog.outputs.NOTES }}
+
+            ---
+
+            **Made with ❤️ by [fabs133](https://github.com/fabs133)**
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Notify on success
+        if: success()
+        run: |
+          echo "🎉 Production release v${{ steps.version.outputs.VERSION }} created successfully!"

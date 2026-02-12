@@ -1,0 +1,29 @@
+# Godot
+.godot/
+*.import
+.import/
+export_presets.cfg
+
+# User data (contains API keys and tokens)
+user://
+
+# Build artifacts
+dist/
+*.zip
+
+# OS
+.DS_Store
+Thumbs.db
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.bak
+*.cache
