@@ -157,7 +157,7 @@ C:\Users\fbrmp\Projekte\
 | CI/CD workflows | ✅ Operational | None |
 | v1.0.0 release | ✅ Published | None |
 | Documentation | ✅ Complete | None |
-| Asset Library | ⏳ Pending | **Submit via web form** |
+| Asset Library | ⏳ Submitted | Awaiting moderator approval (1-3 days) |
 | itch.io | ⏳ Pending | **Upload via Butler or web** |
 | Marketing | ⏳ Optional | Announce when ready |
 
