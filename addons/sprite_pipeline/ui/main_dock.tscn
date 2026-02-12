@@ -1,0 +1,337 @@
+[gd_scene load_steps=2 format=3 uid="uid://sprite_pipeline_dock"]
+
+[ext_resource type="Script" path="res://addons/sprite_pipeline/ui/main_dock.gd" id="1_dock"]
+
+[node name="SpritePipelineDock" type="VBoxContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = -8.0
+offset_bottom = -8.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_dock")
+
+[node name="Header" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Sprite Pipeline"
+theme_override_font_sizes/font_size = 16
+
+[node name="VersionLabel" type="Label" parent="Header"]
+layout_mode = 2
+text = "v0.1.0"
+theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
+
+[node name="HSeparator" type="HSeparator" parent="."]
+layout_mode = 2
+
+[node name="ModeSection" type="VBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="ModeLabel" type="Label" parent="ModeSection"]
+layout_mode = 2
+text = "Mode"
+theme_override_font_sizes/font_size = 14
+
+[node name="ModeButtons" type="HBoxContainer" parent="ModeSection"]
+layout_mode = 2
+
+[node name="BYOKButton" type="Button" parent="ModeSection/ModeButtons"]
+layout_mode = 2
+size_flags_horizontal = 3
+toggle_mode = true
+button_pressed = true
+text = "BYOK (Own Key)"
+
+[node name="PoolButton" type="Button" parent="ModeSection/ModeButtons"]
+layout_mode = 2
+size_flags_horizontal = 3
+toggle_mode = true
+text = "Pool (Shared)"
+
+[node name="HSeparator2" type="HSeparator" parent="."]
+layout_mode = 2
+
+[node name="AuthSection" type="VBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="AuthLabel" type="Label" parent="AuthSection"]
+layout_mode = 2
+text = "Authentication"
+theme_override_font_sizes/font_size = 14
+
+[node name="BYOKAuth" type="VBoxContainer" parent="AuthSection"]
+layout_mode = 2
+
+[node name="APIKeyLabel" type="Label" parent="AuthSection/BYOKAuth"]
+layout_mode = 2
+text = "OpenAI API Key:"
+
+[node name="APIKeyEdit" type="LineEdit" parent="AuthSection/BYOKAuth"]
+layout_mode = 2
+placeholder_text = "sk-..."
+secret = true
+
+[node name="KeyStatus" type="Label" parent="AuthSection/BYOKAuth"]
+layout_mode = 2
+text = "Not configured"
+theme_override_colors/font_color = Color(1, 0.6, 0.2, 1)
+
+[node name="PoolAuth" type="VBoxContainer" parent="AuthSection"]
+visible = false
+layout_mode = 2
+
+[node name="ServerLabel" type="Label" parent="AuthSection/PoolAuth"]
+layout_mode = 2
+text = "Server URL:"
+
+[node name="ServerEdit" type="LineEdit" parent="AuthSection/PoolAuth"]
+layout_mode = 2
+text = "https://sprites.pi-agents.dev"
+placeholder_text = "https://..."
+
+[node name="AuthStatus" type="Label" parent="AuthSection/PoolAuth"]
+layout_mode = 2
+text = "Not logged in"
+theme_override_colors/font_color = Color(1, 0.6, 0.2, 1)
+
+[node name="LoginButton" type="Button" parent="AuthSection/PoolAuth"]
+layout_mode = 2
+text = "Login with Device Code"
+
+[node name="DeviceCodeContainer" type="VBoxContainer" parent="AuthSection/PoolAuth"]
+visible = false
+layout_mode = 2
+
+[node name="DeviceCodeLabel" type="Label" parent="AuthSection/PoolAuth/DeviceCodeContainer"]
+layout_mode = 2
+text = "Enter this code:"
+
+[node name="DeviceCode" type="Label" parent="AuthSection/PoolAuth/DeviceCodeContainer"]
+layout_mode = 2
+text = "XXXX-XXXX"
+theme_override_font_sizes/font_size = 24
+horizontal_alignment = 1
+
+[node name="VerifyLink" type="LinkButton" parent="AuthSection/PoolAuth/DeviceCodeContainer"]
+layout_mode = 2
+text = "Open verification page"
+uri = "https://sprites.pi-agents.dev/activate"
+
+[node name="HSeparator3" type="HSeparator" parent="."]
+layout_mode = 2
+
+[node name="QuotaSection" type="VBoxContainer" parent="."]
+visible = false
+layout_mode = 2
+
+[node name="QuotaLabel" type="Label" parent="QuotaSection"]
+layout_mode = 2
+text = "Quota"
+theme_override_font_sizes/font_size = 14
+
+[node name="QuotaInfo" type="HBoxContainer" parent="QuotaSection"]
+layout_mode = 2
+
+[node name="UnitsLabel" type="Label" parent="QuotaSection/QuotaInfo"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Units: 0 / 0"
+
+[node name="ResetLabel" type="Label" parent="QuotaSection/QuotaInfo"]
+layout_mode = 2
+text = "Resets: --"
+
+[node name="QuotaBar" type="ProgressBar" parent="QuotaSection"]
+layout_mode = 2
+value = 50.0
+show_percentage = false
+
+[node name="RefreshQuotaButton" type="Button" parent="QuotaSection"]
+layout_mode = 2
+text = "Refresh Quota"
+
+[node name="HSeparator4" type="HSeparator" parent="."]
+layout_mode = 2
+
+[node name="CacheSection" type="VBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="CacheSectionHeader" type="HBoxContainer" parent="CacheSection"]
+layout_mode = 2
+
+[node name="CacheLabel" type="Label" parent="CacheSection/CacheSectionHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Sprite Cache"
+theme_override_font_sizes/font_size = 14
+
+[node name="CacheToggle" type="CheckButton" parent="CacheSection/CacheSectionHeader"]
+layout_mode = 2
+button_pressed = true
+text = "Enabled"
+
+[node name="CacheStats" type="HBoxContainer" parent="CacheSection"]
+layout_mode = 2
+
+[node name="CacheSizeLabel" type="Label" parent="CacheSection/CacheStats"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "0 MB / 500 MB"
+
+[node name="CacheHitLabel" type="Label" parent="CacheSection/CacheStats"]
+layout_mode = 2
+text = "Hits: 0%"
+
+[node name="CacheBar" type="ProgressBar" parent="CacheSection"]
+layout_mode = 2
+value = 0.0
+show_percentage = false
+
+[node name="CacheButtons" type="HBoxContainer" parent="CacheSection"]
+layout_mode = 2
+
+[node name="ClearCacheButton" type="Button" parent="CacheSection/CacheButtons"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Clear Cache"
+
+[node name="CacheSettingsButton" type="Button" parent="CacheSection/CacheButtons"]
+layout_mode = 2
+text = "Settings..."
+
+[node name="HSeparator6" type="HSeparator" parent="."]
+layout_mode = 2
+
+[node name="GenerateSection" type="VBoxContainer" parent="."]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="GenerateLabel" type="Label" parent="GenerateSection"]
+layout_mode = 2
+text = "Generate"
+theme_override_font_sizes/font_size = 14
+
+[node name="QueueLabel" type="Label" parent="GenerateSection"]
+layout_mode = 2
+text = "Queue File:"
+
+[node name="QueuePath" type="HBoxContainer" parent="GenerateSection"]
+layout_mode = 2
+
+[node name="QueuePathEdit" type="LineEdit" parent="GenerateSection/QueuePath"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "res://sprites/sprite_queue.yaml"
+
+[node name="BrowseQueueButton" type="Button" parent="GenerateSection/QueuePath"]
+layout_mode = 2
+text = "..."
+
+[node name="OutputLabel" type="Label" parent="GenerateSection"]
+layout_mode = 2
+text = "Output Directory:"
+
+[node name="OutputPath" type="HBoxContainer" parent="GenerateSection"]
+layout_mode = 2
+
+[node name="OutputPathEdit" type="LineEdit" parent="GenerateSection/OutputPath"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "res://assets/sprites"
+
+[node name="BrowseOutputButton" type="Button" parent="GenerateSection/OutputPath"]
+layout_mode = 2
+text = "..."
+
+[node name="StyleLabel" type="Label" parent="GenerateSection"]
+layout_mode = 2
+text = "Global Style:"
+
+[node name="StyleEdit" type="TextEdit" parent="GenerateSection"]
+layout_mode = 2
+size_flags_vertical = 3
+custom_minimum_size = Vector2(0, 60)
+text = "pixel art game sprite, PC hardware themed incremental game, clean silhouette, transparent background"
+wrap_mode = 1
+
+[node name="GenerateButtons" type="HBoxContainer" parent="GenerateSection"]
+layout_mode = 2
+
+[node name="GenerateButton" type="Button" parent="GenerateSection/GenerateButtons"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Generate Sprites"
+
+[node name="CancelButton" type="Button" parent="GenerateSection/GenerateButtons"]
+visible = false
+layout_mode = 2
+text = "Cancel"
+
+[node name="HSeparator5" type="HSeparator" parent="."]
+layout_mode = 2
+
+[node name="StatusSection" type="VBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="StatusLabel" type="Label" parent="StatusSection"]
+layout_mode = 2
+text = "Status"
+theme_override_font_sizes/font_size = 14
+
+[node name="ProgressBar" type="ProgressBar" parent="StatusSection"]
+visible = false
+layout_mode = 2
+
+[node name="StatusText" type="Label" parent="StatusSection"]
+layout_mode = 2
+text = "Ready"
+autowrap_mode = 2
+
+[node name="ErrorSection" type="VBoxContainer" parent="StatusSection"]
+visible = false
+layout_mode = 2
+
+[node name="ErrorLabel" type="Label" parent="StatusSection/ErrorSection"]
+layout_mode = 2
+text = "Error Details"
+theme_override_colors/font_color = Color(1, 0.4, 0.4, 1)
+
+[node name="ErrorText" type="TextEdit" parent="StatusSection/ErrorSection"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 80)
+editable = false
+
+[node name="ErrorButtons" type="HBoxContainer" parent="StatusSection/ErrorSection"]
+layout_mode = 2
+
+[node name="CopyErrorButton" type="Button" parent="StatusSection/ErrorSection/ErrorButtons"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Copy Error Summary"
+
+[node name="ExportReportButton" type="Button" parent="StatusSection/ErrorSection/ErrorButtons"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Export Bug Report"
+
+[node name="ResultsSection" type="VBoxContainer" parent="StatusSection"]
+visible = false
+layout_mode = 2
+
+[node name="ResultsLabel" type="Label" parent="StatusSection/ResultsSection"]
+layout_mode = 2
+text = "Results: 0 success, 0 errors"
+theme_override_colors/font_color = Color(0.4, 1, 0.4, 1)
+
+[node name="OpenOutputButton" type="Button" parent="StatusSection/ResultsSection"]
+layout_mode = 2
+text = "Open Output Folder"
+
+[node name="ReimportButton" type="Button" parent="StatusSection/ResultsSection"]
+layout_mode = 2
+text = "Reimport Assets"

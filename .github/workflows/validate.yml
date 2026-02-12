@@ -1,0 +1,110 @@
+name: Validate Plugin
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  validate:
+    name: Run Validation Checks
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run validation script
+        shell: pwsh
+        run: |
+          .\scripts\validate.ps1
+
+      - name: Check file structure
+        shell: pwsh
+        run: |
+          Write-Host "Checking required files..."
+          $required = @(
+            "addons/sprite_pipeline/plugin.cfg",
+            "addons/sprite_pipeline/plugin.gd",
+            "addons/sprite_pipeline/README.md",
+            "addons/sprite_pipeline/LICENSE",
+            "addons/sprite_pipeline/CHANGELOG.md"
+          )
+
+          $missing = @()
+          foreach ($file in $required) {
+            if (-not (Test-Path $file)) {
+              $missing += $file
+            }
+          }
+
+          if ($missing.Count -gt 0) {
+            Write-Host "❌ Missing required files:" -ForegroundColor Red
+            $missing | ForEach-Object { Write-Host "  - $_" }
+            exit 1
+          }
+
+          Write-Host "✅ All required files present" -ForegroundColor Green
+
+      - name: Check for secrets
+        shell: pwsh
+        run: |
+          Write-Host "Scanning for potential secrets..."
+          $patterns = @(
+            "sk-[a-zA-Z0-9]{20,}",
+            "api[_-]?key\s*=\s*['\"][^'\"]{20,}['\"]"
+          )
+
+          $found = $false
+          foreach ($pattern in $patterns) {
+            $matches = Select-String -Path "addons/sprite_pipeline/**/*.gd" -Pattern $pattern -Recurse
+            if ($matches) {
+              Write-Host "❌ Found potential secret: $pattern" -ForegroundColor Red
+              $found = $true
+            }
+          }
+
+          if (-not $found) {
+            Write-Host "✅ No secrets detected" -ForegroundColor Green
+          } else {
+            exit 1
+          }
+
+  lint-gdscript:
+    name: Lint GDScript Files
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check file permissions
+        run: |
+          echo "Checking for executable .gd files..."
+          if find addons/sprite_pipeline -name "*.gd" -perm /111 | grep -q .; then
+            echo "❌ Found executable .gd files (should not be executable)"
+            find addons/sprite_pipeline -name "*.gd" -perm /111
+            exit 1
+          fi
+          echo "✅ No executable .gd files found"
+
+      - name: Check line endings
+        run: |
+          echo "Checking for CRLF line endings..."
+          if find addons/sprite_pipeline -name "*.gd" -exec file {} \; | grep -q "CRLF"; then
+            echo "⚠️  Found CRLF line endings (should be LF on Linux)"
+            # Don't fail, just warn
+          else
+            echo "✅ All files use LF line endings"
+          fi
+
+      - name: Check for trailing whitespace
+        run: |
+          echo "Checking for trailing whitespace..."
+          if grep -r '[[:space:]]$' addons/sprite_pipeline --include="*.gd" --include="*.cfg"; then
+            echo "⚠️  Found trailing whitespace (consider cleaning)"
+            # Don't fail, just warn
+          else
+            echo "✅ No trailing whitespace found"
+          fi

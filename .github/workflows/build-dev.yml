@@ -1,0 +1,89 @@
+name: Build Dev Release
+
+on:
+  push:
+    branches: [ develop ]
+  workflow_dispatch:
+
+jobs:
+  build-dev:
+    name: Build Development Release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract version
+        id: version
+        shell: pwsh
+        run: |
+          $content = Get-Content "addons/sprite_pipeline/plugin.cfg" -Raw
+          if ($content -match 'version="([^"]+)"') {
+            $version = $Matches[1]
+            echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+            Write-Host "Extracted version: $version"
+          } else {
+            Write-Error "Could not extract version"
+            exit 1
+          }
+
+      - name: Run validation
+        shell: pwsh
+        run: |
+          .\scripts\validate.ps1
+
+      - name: Build dev release
+        shell: pwsh
+        run: |
+          .\scripts\build.ps1 -Mode dev -Version ${{ steps.version.outputs.VERSION }}
+
+      - name: Calculate checksums
+        shell: pwsh
+        run: |
+          $zipFile = "dist/sprite-pipeline-v${{ steps.version.outputs.VERSION }}-dev.zip"
+          $hash = Get-FileHash $zipFile -Algorithm SHA256
+          $hash.Hash | Out-File -FilePath "dist/SHA256SUMS" -Encoding UTF8
+          Write-Host "SHA256: $($hash.Hash)"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sprite-pipeline-dev-${{ steps.version.outputs.VERSION }}
+          path: |
+            dist/*.zip
+            dist/SHA256SUMS
+          retention-days: 30
+
+      - name: Create dev release
+        if: github.ref == 'refs/heads/develop'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.version.outputs.VERSION }}-dev
+          name: Development Build v${{ steps.version.outputs.VERSION }}
+          draft: false
+          prerelease: true
+          files: |
+            dist/*.zip
+            dist/SHA256SUMS
+          body: |
+            ## 🚧 Development Build
+
+            This is an automated development build from the `develop` branch.
+
+            **⚠️ Warning**: This is a pre-release version and may contain bugs.
+
+            ### Version
+            - Plugin Version: ${{ steps.version.outputs.VERSION }}
+            - Build Date: ${{ github.event.head_commit.timestamp }}
+            - Commit: ${{ github.sha }}
+
+            ### Installation
+            1. Download `sprite-pipeline-v${{ steps.version.outputs.VERSION }}-dev.zip`
+            2. Extract to your Godot project's `addons/` folder
+            3. Enable the plugin in Project Settings
+
+            ### Checksums
+            See `SHA256SUMS` for file verification.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
