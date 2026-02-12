@@ -143,6 +143,7 @@ C:\Users\fbrmp\Projekte\
 - `ASSET_LIBRARY_SUBMISSION.md` - Godot submission guide
 - `ITCH_IO_SUBMISSION.md` - itch.io upload guide
 - `DEPLOYMENT_SUMMARY.md` - Complete deployment record
+- `BACKEND_RATE_LIMITING.md` - OpenAI rate limit configuration
 - `QUICK_REFERENCE.md` - This file
 
 ## 🎯 Status Summary
@@ -150,6 +151,7 @@ C:\Users\fbrmp\Projekte\
 | Task | Status | Action Required |
 |------|--------|----------------|
 | Backend security | ✅ Complete | None |
+| OpenAI rate limiting | ✅ Implemented | None (3 retries, 1s delay) |
 | Plugin v1.0.0 | ✅ Complete | None |
 | GitHub repo | ✅ Live | None |
 | CI/CD workflows | ✅ Operational | None |
@@ -165,6 +167,15 @@ C:\Users\fbrmp\Projekte\
 ```bash
 curl http://192.168.178.30:8000/health
 ```
+
+**Adjust OpenAI rate limits:**
+```bash
+ssh droid@192.168.178.30
+cd /home/droid/.ssh/sprite-pipeline-backend
+nano .env  # Edit SPRITE_LITELLM_MAX_RETRIES and SPRITE_LITELLM_RETRY_DELAY
+docker compose restart backend
+```
+See `BACKEND_RATE_LIMITING.md` for details.
 
 **Test plugin in Godot:**
 ```bash
