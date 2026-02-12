@@ -158,7 +158,7 @@ C:\Users\fbrmp\Projekte\
 | v1.0.0 release | ✅ Published | None |
 | Documentation | ✅ Complete | None |
 | Asset Library | ⏳ Submitted | Awaiting moderator approval (1-3 days) |
-| itch.io | ⏳ Pending | **Upload via Butler or web** |
+| itch.io | ⏳ Uploaded | Add screenshots & publish tomorrow |
 | Marketing | ⏳ Optional | Announce when ready |
 
 ## ⚡ Quick Actions
