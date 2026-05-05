@@ -1,97 +1,100 @@
-# Sprite Pipeline - Godot Plugin
+# Sprite Pipeline — Godot Plugin
 
+[![Status](https://img.shields.io/badge/status-archived-lightgrey)](#status)
 [![Version](https://img.shields.io/badge/version-1.0.0-blue)](https://github.com/fabs133/sprite-pipeline-plugin/releases)
 [![Godot](https://img.shields.io/badge/godot-4.2%2B-blue)](https://godotengine.org/)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-green)](addons/sprite_pipeline/LICENSE)
 
-AI-powered sprite generation directly in the Godot Editor using OpenAI's image generation models.
+## Status
 
-## 📦 Installation
+**Archived.** This plugin shipped at v1.0.0 in February 2026. The hosted Pool service
+that backed shared-credit mode is no longer running. The code is published as an
+engineering reference. **Issues and PRs are not monitored.** No support is provided.
 
-### From Godot Asset Library
-1. Open Godot → AssetLib tab
-2. Search for "Sprite Pipeline"
-3. Download → Install
-4. Enable in Project Settings → Plugins
+## Overview
 
-### From GitHub Releases
-1. Download the latest `sprite-pipeline-v*.zip` from [Releases](https://github.com/fabs133/sprite-pipeline-plugin/releases)
-2. Extract to your project's `addons/` folder
-3. Enable in Project Settings → Plugins
+A Godot 4.x editor plugin that generates sprites from text prompts using OpenAI's
+image generation API. Runs inside the Godot Editor — no external pipeline tools.
+Output sprites land directly in your project.
 
-### From itch.io
-Purchase and download from [itch.io](https://fabs133.itch.io/sprite-pipeline-godot)
+Two operation modes are implemented:
 
-## 📖 Documentation
+- **BYOK (Bring Your Own Key)** — the supported path. The plugin calls OpenAI
+  directly with an API key you provide. Requests never go through any third-party
+  server.
+- **Pool (shared credits)** — originally backed by a hosted credit-and-billing
+  service. That service has been retired. The plugin code still supports Pool mode
+  against a self-hosted backend. A reference backend implementation is available at
+  [github.com/&lt;owner&gt;/sprite-pipeline-backend](https://github.com/) (URL placeholder
+  pending publication).
 
-Full documentation is available in the plugin's README: [addons/sprite_pipeline/README.md](addons/sprite_pipeline/README.md)
+## Installation
 
-### Quick Links
-- [Features](addons/sprite_pipeline/README.md#features)
-- [Quick Start Guide](addons/sprite_pipeline/README.md#quick-start)
-- [Configuration](addons/sprite_pipeline/README.md#configuration)
-- [Troubleshooting](addons/sprite_pipeline/README.md#troubleshooting)
-- [Changelog](addons/sprite_pipeline/CHANGELOG.md)
+1. Clone this repository, or download a release zip from
+   [Releases](https://github.com/fabs133/sprite-pipeline-plugin/releases).
+2. Copy the `addons/sprite_pipeline/` folder into your Godot project's `addons/`
+   directory.
+3. In Godot: **Project → Project Settings → Plugins** → enable "Sprite Pipeline".
+4. The "Sprite Pipeline" panel appears at the bottom of the editor.
 
-## 🚀 Features
+For BYOK setup, plugin usage, configuration, and troubleshooting, see the addon
+README at [addons/sprite_pipeline/README.md](addons/sprite_pipeline/README.md).
 
-- **Two Operation Modes**: BYOK (your OpenAI key) or Pool (shared credits)
-- **Smart Caching**: Prevents duplicate generations
-- **Batch Processing**: Generate multiple sprites from JSON
-- **Multiple Styles**: Pixel Art, Cartoon, Flat Vector, Retro 8-bit, Watercolor, Realistic
-- **Auto Import**: Sprites automatically appear in your project
+## Repository Layout
 
-## 🛠️ Development
+```
+sprite-pipeline-plugin/
+├── addons/sprite_pipeline/    Plugin source (drop into your project)
+│   ├── api/                   OpenAI and Pool API clients
+│   ├── ui/                    Editor dock and dialogs
+│   ├── cache/                 Local LRU sprite cache
+│   ├── remediation/           Self-healing actions for common errors
+│   ├── resources/             Style presets and prompt templates
+│   ├── plugin.gd              EditorPlugin entry point
+│   ├── plugin.cfg             Godot plugin manifest
+│   ├── README.md              Addon-internal documentation
+│   ├── CHANGELOG.md           Release history
+│   └── LICENSE                MIT license
+├── scripts/                   Build and validation scripts (PowerShell + Bash)
+├── dist/                      Pre-built release zips
+├── .github/workflows/         CI for validate / build-dev / build-prod
+└── asset.cfg                  Godot Asset Library metadata
+```
 
-### Building from Source
+## Related Repositories
+
+This plugin was the client half of a larger system. The other repositories:
+
+- **sprite-pipeline-backend** — FastAPI backend providing Pool mode (auth, credits,
+  Stripe billing, OpenAI proxying). Required if you want to run Pool mode against
+  a self-hosted instance. Repo URL: TBD.
+- **sprite-pipeline-web** — Astro/React marketing and dashboard frontend for the
+  hosted SaaS. Repo URL: TBD.
+
+## Building from Source
+
+The repository ships pre-built zips in [dist/](dist/). To build locally:
 
 ```bash
-# Development build
-./scripts/build.sh dev 1.0.0-alpha
-# or
-.\scripts\build.ps1 -Mode dev -Version 1.0.0-alpha
-
-# Production build
+# Linux / macOS
 ./scripts/build.sh prod 1.0.0
-# or
+
+# Windows
 .\scripts\build.ps1 -Mode prod -Version 1.0.0
 ```
 
-### Validation
+Validation:
 
 ```bash
-# Standard validation
-.\scripts\validate.ps1
-
-# Strict validation (for production)
 .\scripts\validate.ps1 -Strict
 ```
 
-### GitHub Actions
+## License
 
-This repository includes automated workflows:
-- **Validate**: Runs on every push/PR
-- **Build Dev**: Creates pre-releases from `develop` branch
-- **Build Prod**: Creates releases from version tags (e.g., `v1.0.0`)
+MIT — see [addons/sprite_pipeline/LICENSE](addons/sprite_pipeline/LICENSE).
 
-## 📄 License
+## Credits
 
-MIT License - see [LICENSE](LICENSE)
-
-## 🤝 Contributing
-
-Contributions welcome! Please:
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
-
-## 💬 Support
-
-- 🐛 [GitHub Issues](https://github.com/fabs133/sprite-pipeline-plugin/issues)
-- 📧 Email: support@sprite-pipeline.com
-- 💬 [Discord](https://discord.gg/sprite-pipeline)
-
----
-
-**Made with ❤️ by [fabs133](https://github.com/fabs133)**
+Built by [fabs133](https://github.com/fabs133) on top of the
+[Godot Engine](https://godotengine.org/) and the [OpenAI](https://openai.com/)
+image generation API.
