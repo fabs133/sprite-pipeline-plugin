@@ -1,99 +1,100 @@
-# Sprite Pipeline - Godot Plugin
+# Sprite Pipeline — Godot Plugin
 
-AI-powered sprite generation directly in the Godot Editor using OpenAI's image generation models.
+A Godot 4.x editor plugin that generates sprites from text prompts using OpenAI's
+image generation API.
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue) ![Godot](https://img.shields.io/badge/godot-4.2%2B-blue) ![License](https://img.shields.io/badge/license-MIT-green)
+![Status](https://img.shields.io/badge/status-archived-lightgrey) ![Version](https://img.shields.io/badge/version-1.0.0-blue) ![Godot](https://img.shields.io/badge/godot-4.2%2B-blue) ![License](https://img.shields.io/badge/license-MIT-green)
+
+## Status
+
+**Archived.** Shipped at v1.0.0 in February 2026. The hosted Pool service that
+backed shared-credit mode is no longer running. The plugin is published as an
+engineering reference. Issues and PRs are not monitored.
+
+## Operation Modes
+
+The plugin supports two modes. **BYOK is the supported path** for the archived
+release.
+
+- **BYOK (Bring Your Own Key)** — your OpenAI API key is stored locally in
+  `user://` and used to call OpenAI directly. No third-party server is involved.
+  Implemented in [api/byok_client.gd](api/byok_client.gd).
+- **Pool (shared credits)** — was originally backed by a hosted credit-and-billing
+  service. That service has been retired. The Pool client still works against a
+  self-hosted backend; see the `sprite-pipeline-backend` reference implementation
+  (URL placeholder pending publication). Implemented in
+  [api/api_client.gd](api/api_client.gd). The default `pool.server_url` setting
+  still points at the original hosted instance and should be overridden in the
+  plugin panel.
 
 ## Features
 
-🎨 **Two Operation Modes:**
-- **BYOK Mode** (Bring Your Own Key): Use your own OpenAI API key for direct generation
-- **Pool Mode**: Use shared credits via [sprite-pipeline.com](https://sprite-pipeline.com) (no OpenAI account needed)
-
-💾 **Smart Caching**: Local cache system prevents duplicate generations and saves API costs
-
-📦 **Automatic Import**: Generated sprites are automatically imported into your Godot project
-
-🎭 **Multiple Styles**: Support for Pixel Art, Cartoon, Flat Vector, Retro 8-bit, Watercolor, and Realistic styles
-
-⚡ **Batch Generation**: Process multiple sprites at once from JSON queue files
+- **Smart caching** — local LRU cache (`user://sprite_pipeline/cache/`, 500 MB
+  default) prevents duplicate generations.
+- **Automatic import** — generated sprites are placed under your configured
+  output root and picked up by Godot's importer.
+- **Multiple styles** — Pixel Art, Cartoon, Flat Vector, Retro 8-bit, Watercolor,
+  Realistic. Selectable globally or per-sprite.
+- **Batch generation** — process JSON queue files producing multiple sprites in
+  one run.
+- **Multi-row spritesheets** — for directional animations (e.g., walk-down,
+  walk-left, walk-right, walk-up in a single sheet).
 
 ## Installation
 
-### Option 1: From Godot Asset Library (Recommended)
+1. Copy this `addons/sprite_pipeline/` folder into your Godot project's
+   `addons/` directory. (Or download a release zip from
+   [Releases](https://github.com/fabs133/sprite-pipeline-plugin/releases) and
+   extract it.)
+2. **Project → Project Settings → Plugins** → enable "Sprite Pipeline".
+3. The "Sprite Pipeline" panel appears at the bottom of the editor.
 
-1. Open your Godot project
-2. Click on the **AssetLib** tab at the top
-3. Search for "**Sprite Pipeline**"
-4. Click **Download** → **Install**
-5. Enable the plugin: **Project → Project Settings → Plugins** → Enable "Sprite Pipeline"
+## Quick Start (BYOK)
 
-### Option 2: Manual Installation
+1. Get an API key from <https://platform.openai.com/api-keys>.
+2. Open the **Sprite Pipeline** panel.
+3. Select the **BYOK Mode** tab.
+4. Paste your key into **OpenAI API Key**.
+5. Enter a prompt and click **Generate**.
 
-1. Download the latest release from [GitHub Releases](https://github.com/fabs133/sprite-pipeline-plugin/releases)
-2. Extract the `addons/sprite_pipeline/` folder to your project's `addons/` directory
-3. Enable the plugin: **Project → Project Settings → Plugins** → Enable "Sprite Pipeline"
-4. Restart Godot
+The key is written to `user://sprite_pipeline_settings.cfg`, outside your project
+folder, and is sent only to OpenAI's API.
 
-### Option 3: From itch.io (Full Version)
+## Pool Mode (self-hosted backend)
 
-Purchase the full version with premium support from [itch.io](https://fabs133.itch.io/sprite-pipeline-godot)
+Pool mode requires a backend that implements the device-code OAuth flow and
+credit/billing endpoints the plugin expects. The original hosted service is
+offline; a reference backend implementation is available in the
+`sprite-pipeline-backend` repository (URL placeholder pending publication).
 
-## Quick Start
+To point the plugin at your own backend:
 
-### BYOK Mode (Bring Your Own Key)
-
-1. Get an OpenAI API key from https://platform.openai.com/api-keys
-2. Open the **Sprite Pipeline** panel at the bottom of the Godot Editor
-3. Select **"BYOK Mode"** tab
-4. Paste your API key in the **"OpenAI API Key"** field
-5. Click **"Generate"** to create your first sprite!
-
-**Note**: Your API key is stored securely in `user://` and never leaves your machine except to call OpenAI directly.
-
-### Pool Mode (Shared Credits)
-
-1. Sign up for a free account at https://sprite-pipeline.com
-2. Open the **Sprite Pipeline** panel
-3. Select **"Pool Mode"** tab
-4. Click **"Login with Device Code"**
-5. A browser will open - authorize the plugin
-6. Return to Godot and start generating with credits!
-
-**Pricing**: Get 100 free credits on signup. 1 credit = 1 sprite generation.
+1. Open the Sprite Pipeline panel → **Pool Mode** tab.
+2. Edit the **Server URL** field to your backend's base URL.
+3. Click **Login with Device Code** and complete the flow in your browser.
 
 ## Configuration
 
-### Output Settings
+| Setting | Purpose | Default |
+|---|---|---|
+| Output Root | Where generated sprites are saved | `res://assets/sprites` |
+| Queue Path | JSON file with batch requests | (none) |
+| Global Style | Default style applied to generations | Pixel Art |
+| Cache Size | LRU cache budget | 500 MB |
 
-- **Output Root**: Where generated sprites are saved (default: `res://assets/sprites`)
-- **Queue Path**: JSON file with batch generation requests
-- **Global Style**: Default style applied to all generations (can be overridden per-sprite)
-
-### Cache Settings
-
-The plugin includes a local cache to avoid regenerating identical sprites:
-
-- **Location**: `user://sprite_pipeline/cache/`
-- **Max Size**: 500 MB (configurable)
-- **Behavior**: Automatic LRU eviction when full
-
-**Cache Stats** are shown in the plugin panel. Use **"Clear Cache"** button to reset.
+Cache stats are shown in the panel; **Clear Cache** resets them.
 
 ## Usage Examples
 
-### Single Sprite Generation
+### Single sprite
 
-1. Open the Sprite Pipeline panel
-2. Choose your mode (BYOK or Pool)
-3. Enter a prompt: `"a blue slime character, pixel art style"`
-4. Set frame count and layout
-5. Click **Generate**
-6. Sprite appears in your Output Root directory
+1. Open the Sprite Pipeline panel.
+2. Choose mode (BYOK or Pool).
+3. Enter a prompt: `"a blue slime character, pixel art style"`.
+4. Set frame count and layout.
+5. **Generate.** The sprite is written to your Output Root.
 
-### Batch Generation with JSON Queue
-
-Create a `queue.json` file:
+### Batch from JSON queue
 
 ```json
 {
@@ -116,11 +117,9 @@ Create a `queue.json` file:
 }
 ```
 
-Set **Queue Path** to your JSON file and click **Generate**.
+Set **Queue Path** to your JSON and click **Generate**.
 
-### Multi-Row Spritesheets
-
-Generate spritesheets with multiple rows (e.g., for directional animations):
+### Multi-row spritesheet
 
 ```json
 {
@@ -140,84 +139,67 @@ Generate spritesheets with multiple rows (e.g., for directional animations):
 
 ## Supported Styles
 
-- **Pixel Art**: Retro 8-bit/16-bit style
-- **Cartoon**: Clean, bold outlines
-- **Flat Vector**: Modern, minimalist design
-- **Retro 8-bit**: Classic video game aesthetic
-- **Watercolor**: Artistic, painted look
-- **Realistic**: Photo-realistic rendering
-
-Set via **Global Style** dropdown or per-sprite in JSON queue.
+Pixel Art, Cartoon, Flat Vector, Retro 8-bit, Watercolor, Realistic. Selectable
+via the Global Style dropdown or per-sprite in the JSON queue.
 
 ## Troubleshooting
 
-### "Invalid API Key" (BYOK Mode)
+### "Invalid API Key" (BYOK)
 
-- Verify your key starts with `sk-` or `sk-proj-`
-- Check that your OpenAI account has available credits
-- Test the key at https://platform.openai.com/playground
+- Verify the key starts with `sk-` or `sk-proj-`.
+- Check that the OpenAI account has credits.
+- Test the key in the [OpenAI playground](https://platform.openai.com/playground).
 
-### "Generation Failed" (Pool Mode)
+### "Generation Failed" (Pool)
 
-- Check your internet connection
-- Verify you have available credits at sprite-pipeline.com
-- Try logging out and back in
+- Confirm the backend `Server URL` in the Pool tab points at a reachable instance.
+- Check your internet connection.
+- Try logging out and back in.
 
 ### "Output directory not writable"
 
-- Ensure the Output Root path exists
-- Check that you have write permissions
-- Try using `res://` paths instead of absolute paths
+- Ensure the Output Root path exists.
+- Use `res://...` paths rather than absolute paths.
 
-### Clear Cache
+### Cached results look wrong
 
-If generations are returning unexpected cached results:
+Open the panel → **Cache Stats** → **Clear Cache**.
 
-1. Open Sprite Pipeline panel
-2. Scroll to **Cache Stats** section
-3. Click **Clear Cache** button
-4. Try generating again
+### Plugin debug output
 
-### Check Plugin Logs
-
-Enable debug output:
-1. **Editor → Editor Settings → Network → Debug → HTTP Debug**
-2. Check the **Output** panel for `[SpritePipeline]` messages
+**Editor → Editor Settings → Network → Debug → HTTP Debug**, then watch the
+**Output** panel for `[SpritePipeline]` messages.
 
 ## Security & Privacy
 
-⚠️ **NEVER commit your API keys to version control**
+⚠️ **Never commit API keys to version control.**
 
-### BYOK Mode
-- API keys stored in `user://sprite_pipeline_settings.cfg` (not tracked by Git)
-- Keys never leave your machine (sent directly to OpenAI)
-- Add `user://` to `.gitignore` for safety
+### BYOK mode
+- API key is stored in `user://sprite_pipeline_settings.cfg`, outside the
+  project folder.
+- The key is sent only to `https://api.openai.com`.
 
-### Pool Mode
-- Uses OAuth device flow (no password entry)
-- Access tokens stored securely in `user://`
-- All API calls use HTTPS
+### Pool mode
+- OAuth device flow — no password is entered.
+- Access tokens are stored in `user://`.
+- All backend calls use HTTPS.
 
-**Best Practice**: Add this to your `.gitignore`:
+Suggested `.gitignore` additions for projects using the plugin:
+
 ```
-# Sprite Pipeline user data
 user://
 .godot/
 *.import
 ```
 
-## API & Automation
+## Automation (CI/CD)
 
-The plugin supports automation via HTTP commands for CI/CD pipelines:
+The plugin includes an HTTP automation server for headless generation:
 
 ```bash
-# Enable automation mode
 export SPRITE_PIPELINE_AUTOMATION=1
-
-# Start Godot headless
 godot --headless --enable-sprite-pipeline-automation
 
-# Send generation command
 curl http://localhost:8765/generate -X POST -d '{
   "command": "generate",
   "queue_path": "res://sprites/queue.json",
@@ -225,63 +207,37 @@ curl http://localhost:8765/generate -X POST -d '{
 }'
 ```
 
-See [automation documentation](https://github.com/fabs133/sprite-pipeline-plugin/wiki/Automation) for details.
-
 ## FAQ
 
-**Q: How much does it cost?**
-
-A: BYOK mode costs whatever OpenAI charges (~$0.04-0.10 per image). Pool mode is $10 for 100 credits (100 images).
+**Q: How much does generation cost?**
+A: BYOK passes through OpenAI's per-image pricing (~$0.04–0.10 per image at the
+time of release; check current pricing). Pool mode pricing was set by the
+hosted service and no longer applies.
 
 **Q: Can I use this commercially?**
-
-A: Yes! The plugin is MIT licensed. Check OpenAI's terms for generated image usage.
+A: The plugin is MIT-licensed. Generated images are subject to OpenAI's terms.
 
 **Q: What Godot versions are supported?**
-
 A: Godot 4.2 and later. Godot 3.x is not supported.
 
-**Q: Can I generate animations?**
-
-A: The plugin generates spritesheets (multiple frames in one image). You'll need to slice and animate them in Godot using AnimationPlayer or AnimatedSprite.
+**Q: Can I generate animations directly?**
+A: The plugin generates spritesheets (multiple frames in one image). Slice and
+animate them in Godot using `AnimatedSprite2D` or `AnimationPlayer`.
 
 **Q: Where are my API keys stored?**
+A: In `user://sprite_pipeline_settings.cfg`, outside the project folder, not
+tracked by version control.
 
-A: In `user://sprite_pipeline_settings.cfg`. This is outside your project folder and not tracked by version control.
-
-**Q: Can I use my own image generation model?**
-
-A: Currently only OpenAI models are supported. Contact us if you need custom model support.
-
-## Support
-
-- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/fabs133/sprite-pipeline-plugin/issues)
-- 📧 **Email**: support@sprite-pipeline.com
-- 💬 **Discord**: [Join our community](https://discord.gg/sprite-pipeline)
-- 📚 **Documentation**: [Full wiki](https://github.com/fabs133/sprite-pipeline-plugin/wiki)
-
-## Contributing
-
-Contributions are welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes
-4. Push to the branch
-5. Open a Pull Request
+**Q: Can I plug in a different image generation model?**
+A: Only OpenAI's image API is wired up. The relevant code is concentrated in
+[api/byok_client.gd](api/byok_client.gd) and [api/api_client.gd](api/api_client.gd)
+if you want to fork.
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+MIT — see [LICENSE](LICENSE).
 
 ## Acknowledgments
 
-- Built with [Godot Engine](https://godotengine.org/)
-- Powered by [OpenAI](https://openai.com/)
-- Inspired by the amazing Godot community
-
----
-
-**Made with ❤️ by [fabs133](https://github.com/fabs133)**
-
-If you find this plugin useful, consider [buying me a coffee](https://ko-fi.com/fabs133) ☕
+Built on the [Godot Engine](https://godotengine.org/) and OpenAI's image
+generation API.
