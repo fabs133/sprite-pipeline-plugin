@@ -91,8 +91,7 @@ text = "Server URL:"
 
 [node name="ServerEdit" type="LineEdit" parent="AuthSection/PoolAuth"]
 layout_mode = 2
-text = "https://sprites.pi-agents.dev"
-placeholder_text = "https://..."
+placeholder_text = "https://your-backend.example.com"
 
 [node name="AuthStatus" type="Label" parent="AuthSection/PoolAuth"]
 layout_mode = 2
@@ -120,7 +119,6 @@ horizontal_alignment = 1
 [node name="VerifyLink" type="LinkButton" parent="AuthSection/PoolAuth/DeviceCodeContainer"]
 layout_mode = 2
 text = "Open verification page"
-uri = "https://sprites.pi-agents.dev/activate"
 
 [node name="HSeparator3" type="HSeparator" parent="."]
 layout_mode = 2

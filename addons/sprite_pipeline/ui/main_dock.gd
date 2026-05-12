@@ -602,7 +602,7 @@ func _load_settings() -> void:
 		style_edit.text = config.get_value("general", "global_style",
 			"pixel art game sprite, PC hardware themed incremental game, clean silhouette, transparent background")
 		api_key_edit.text = config.get_value("byok", "api_key", "")
-		server_edit.text = config.get_value("pool", "server_url", "https://sprites.pi-agents.dev")
+		server_edit.text = config.get_value("pool", "server_url", "")
 
 		# Load pool tokens if available
 		var access_token := config.get_value("pool", "access_token", "")
