@@ -92,6 +92,12 @@ Validation:
 .\scripts\validate.ps1 -Strict
 ```
 
+To release a new version, update the version in `addons/sprite_pipeline/plugin.cfg`,
+`PLUGIN_VERSION` in `addons/sprite_pipeline/api/pool_client.gd` (the validation script
+fails if these two differ), `asset.cfg` and the CHANGELOG. Pushing a `vX.Y.Z` tag runs
+the Build Production Release workflow, which builds the zip and publishes a GitHub
+release with `SHA256SUMS`.
+
 ## License
 
 MIT — see [addons/sprite_pipeline/LICENSE](addons/sprite_pipeline/LICENSE).
