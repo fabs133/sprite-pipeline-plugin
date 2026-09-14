@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - BYOK builds the same prompt and post-processes the sheet the same way as the backend.
 - `run_manifest.json` version 2 in both modes: paths relative to the output directory, frame and raw sheet paths, SHA-256 and a grid check per sprite.
 - The dock shows the stage and percentage while generating, counts grid warnings in the results, and rescans the FileSystem dock after each generation.
+- After a generation in the editor, the dock offers to set the project's default 2D texture filter to Nearest, so pixel art stays sharp. It asks first; **Don't ask again** is saved as `[editor] filter_prompt_dismissed`, and the results show the current filter with a button that asks again.
+- Generated sheet and frame PNGs are imported lossless, without mipmaps, and are never switched to VRAM compression when used in 3D (`detect_3d/compress_to`). Setting: `[editor] pin_import_params`.
+- A `SpriteFrames` resource (`<name>.tres`) is saved next to each animated sheet: one animation per row, 8 FPS by default, looping. Its frames are `AtlasTexture` regions with `filter_clip` on, so pixels of neighbouring frames don't bleed into the edges. An existing `.tres` is kept and `<name>.generated.tres` written instead. The results link to each file. Settings: `[editor] write_spriteframes` (the **Write SpriteFrames** switch), `spriteframes_fps` (**FPS**), `spriteframes_loop`, `overwrite_spriteframes`.
 - New settings: `[byok] image_model`, `[byok] image_quality`, `[pool] download_raw` (the **Download raw sheets** checkbox).
 - `rows` queue field: rows of frames on the generated grid.
 - Headless GDScript tests: `scripts/test.ps1` and `scripts/test.sh`.
@@ -39,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Logging in with an empty or rejected server URL shows a clear message instead of "Failed to start request: 31".
 - Saved settings pointing at the retired `sprites.pi-agents.dev` service are cleared on load.
 - The remediation actions failed to compile.
+- A confirmed consent dialog returned no consent token, so the action was treated as declined.
 
 ### Security
 - Asset paths returned by a Pool server are confined to the output directory. Previously a `../` path could overwrite project files, including editor scripts.

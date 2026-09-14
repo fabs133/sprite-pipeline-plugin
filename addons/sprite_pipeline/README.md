@@ -37,7 +37,13 @@ Both modes build the same prompt and process the generated sheet the same way.
 - **Grid check** — sprites that spill across cell boundaries are counted as grid
   warnings in the results.
 - **Automatic import** — files are written under your output directory together
-  with a `run_manifest.json`, and the FileSystem dock is rescanned after each run.
+  with a `run_manifest.json`, the FileSystem dock is rescanned after each run, and
+  the generated PNGs are imported lossless without mipmaps.
+- **SpriteFrames** — every animated sheet gets a `SpriteFrames` resource, ready
+  for an `AnimatedSprite2D`.
+- **Pixel-art filtering** — the dock offers to set the project's default texture
+  filter to Nearest. See
+  [What the Plugin Writes into Your Project](#what-the-plugin-writes-into-your-project).
 - **Progress** — the dock shows the current stage and percentage.
 - **Local cache (Pool mode)** — results are cached in `user://sprite_cache/`
   (500 MB by default) so identical requests are not generated twice.
@@ -124,6 +130,7 @@ For the `hero_walk.png` entry above, which sets `frame_w` and `frame_h`:
 | `characters/hero_walk.png` | Compact sheet: `frames × frame_w` wide, `rows × frame_h` high |
 | `characters/hero_walk/frame_<row>_<column>.png` | One file per frame |
 | `characters/hero_walk_raw.png` | The generated 1024×1024 sheet |
+| `characters/hero_walk.tres` | `SpriteFrames` for the sheet, written in the editor (see [below](#spriteframes-resources)) |
 
 Frames are scaled down with nearest-neighbour sampling and never scaled up. An
 entry without `frame_w`/`frame_h`, like `enemy_slime.png`, is saved as the
@@ -168,10 +175,83 @@ reports. Files that fail the check are skipped and listed under `download_errors
 in `run_manifest.json`. If the server can't be reached while the job runs, the
 plugin retries three times before it gives up.
 
+## What the Plugin Writes into Your Project
+
+Besides the generated files, the plugin changes up to three things in your project
+after each generation in the editor. They run after the results are shown; if one
+fails, the error is in the **Output** panel and the results stay.
+
+### Project texture filter (asks first)
+
+Godot filters 2D textures linearly by default, which blurs pixel art when it is
+scaled up. If the project's default texture filter is neither Nearest nor Nearest
+Mipmap, the dock asks whether to set **Project Settings → Rendering → Textures →
+Canvas Textures → Default Texture Filter** to Nearest.
+
+- **Set to Nearest** writes `textures/canvas_textures/default_texture_filter=0`
+  under `[rendering]` in `project.godot`.
+- **Not now** changes nothing and asks again after the next generation.
+- **Don't ask again** stops the question (`filter_prompt_dismissed`). The results
+  section still shows the current filter with a **Set to Nearest...** button.
+
+The plugin never changes the **Texture Filter** of your nodes; a node set to
+Linear stays blurry.
+
+### Import settings of generated PNGs
+
+When Godot has imported the new files, the plugin sets three import options of
+every sheet and frame PNG listed in `run_manifest.json` and reimports the files it
+changed:
+
+| Import option | Value |
+|---|---|
+| `compress/mode` | `0`, Lossless |
+| `mipmaps/generate` | `false` |
+| `detect_3d/compress_to` | `0`, Disabled: a texture used in 3D is not switched to VRAM compression |
+
+Other options and other files are left alone. The plugin waits up to 10 seconds
+for the import; files not imported by then keep their settings, with a warning in
+the **Output** panel. Check the result in the **Import** dock.
+
+### SpriteFrames resources
+
+Every sprite with more than one frame gets a `SpriteFrames` resource next to its
+sheet: `characters/hero_walk.png` gets `characters/hero_walk.tres`. Assign it to
+an `AnimatedSprite2D`'s **Sprite Frames**.
+
+- Each row of the sheet is an animation: `default` for a single row, `row_0`,
+  `row_1`, … for several.
+- Each frame is an `AtlasTexture` region of the sheet with **Filter Clip** on, so
+  pixels of the neighbouring frames don't bleed into its edges.
+- Animations play at the **FPS** set in the dock (8 by default) and loop.
+- An existing `.tres` is never replaced unless `overwrite_spriteframes` is on; the
+  new resource is saved as `<name>.generated.tres` instead, and the status line
+  says so.
+
+The results list the files written; click one to select it in the FileSystem dock.
+
+### Turning it off
+
+These settings are in the `[editor]` section of
+`user://sprite_pipeline_settings.cfg`:
+
+| Setting | Default | In the dock |
+|---|---|---|
+| `filter_prompt_dismissed` | `false` | **Don't ask again** in the texture filter dialog |
+| `pin_import_params` | `true` | — |
+| `write_spriteframes` | `true` | **Write SpriteFrames** |
+| `spriteframes_fps` | `8.0` | **FPS** |
+| `spriteframes_loop` | `true` | — |
+| `overwrite_spriteframes` | `false` | — |
+
+Edit the file while the editor is closed; the dock writes its own values back when
+a setting changes.
+
 ## Configuration
 
-All settings are edited in the dock and saved to
-`user://sprite_pipeline_settings.cfg`.
+These settings are edited in the dock and saved to
+`user://sprite_pipeline_settings.cfg`. The `[editor]` settings without a control
+are listed under [Turning it off](#turning-it-off).
 
 | Setting | Purpose | Default |
 |---|---|---|
@@ -183,6 +263,8 @@ All settings are edited in the dock and saved to
 | Server URL (Pool) | Backend base URL | empty |
 | Download raw sheets (Pool) | Also download each sprite's generated 1024×1024 sheet | off |
 | Sprite Cache (Pool) | Cache on/off; size limit under **Settings…** (100–10,000 MB) | on, 500 MB |
+| Write SpriteFrames | Save a `SpriteFrames` resource next to each animated sheet | on |
+| FPS | Animation speed of those resources | 8 |
 
 Both modes add fixed instructions about the grid layout and the transparent
 background to every prompt; the wording is in [prompting.gd](prompting.gd).
@@ -215,6 +297,18 @@ background to every prompt; the wording is in [prompting.gd](prompting.gd).
 
 The generated image had sprites crossing cell boundaries, so frames can be cut off.
 Generate the sprite again, or describe fewer or simpler poses.
+
+### Sprites look blurry
+
+Click **Set to Nearest...** under the results, or set **Project Settings →
+Rendering → Textures → Canvas Textures → Default Texture Filter** to Nearest. A
+node whose own **Texture Filter** is Linear stays blurry.
+
+### A `.generated.tres` file appeared
+
+The sheet already had a `.tres`, which the plugin doesn't replace. Delete the old
+file and rename the new one, or set `overwrite_spriteframes=true` (see
+[Turning it off](#turning-it-off)).
 
 ### Cached results look wrong
 
@@ -315,8 +409,9 @@ repository need Godot 4.5 or later.
 
 **Q: Can I generate animations directly?**
 A: Yes. With `frame_w` and `frame_h` set, every frame is saved as its own file and
-the compact sheet has equal cells, ready for `AnimatedSprite2D` or
-`AnimationPlayer`.
+the compact sheet has equal cells. In the editor, a `SpriteFrames` resource next to
+the sheet plays in an `AnimatedSprite2D` right away; see
+[SpriteFrames resources](#spriteframes-resources).
 
 **Q: Where are my API keys stored?**
 A: In `user://sprite_pipeline_settings.cfg`, outside the project folder, not
