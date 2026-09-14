@@ -1,34 +1,32 @@
 # Sprite Pipeline — Godot Plugin
 
 [![Status](https://img.shields.io/badge/status-archived-lightgrey)](#status)
-[![Version](https://img.shields.io/badge/version-1.0.0-blue)](https://github.com/fabs133/sprite-pipeline-plugin/releases)
+[![Version](https://img.shields.io/badge/version-1.1.0-blue)](https://github.com/fabs133/sprite-pipeline-plugin/releases)
 [![Godot](https://img.shields.io/badge/godot-4.2%2B-blue)](https://godotengine.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](addons/sprite_pipeline/LICENSE)
 
 ## Status
 
-**Archived.** This plugin shipped at v1.0.0 in February 2026. The hosted Pool service
-that backed shared-credit mode is no longer running. The code is published as an
-engineering reference. **Issues and PRs are not monitored.** No support is provided.
+**Archived.** This plugin shipped at v1.0.0 in February 2026. Version 1.1.0
+(September 2026) ports Pool mode to protocol 2.0.0 of sprite-pipeline-backend and
+moves BYOK to OpenAI's gpt-image models. The hosted Pool service of 1.0.0 is no
+longer running. The code is published as an engineering reference. **Issues and
+PRs are not monitored.** No support is provided.
 
 ## Overview
 
 A Godot 4.x editor plugin that generates sprites from text prompts using OpenAI's
-image generation API. Runs inside the Godot Editor — no external pipeline tools.
-Output sprites land directly in your project.
+image models. Runs inside the Godot Editor — no external pipeline tools. Output
+sprites land directly in your project, cut into frames at the size you choose.
 
 Two operation modes are implemented:
 
-- **BYOK (Bring Your Own Key)** — the supported path. The plugin calls OpenAI
-  directly with an API key you provide. Requests never go through any third-party
-  server.
-- **Pool (shared credits)** — originally backed by a hosted credit-and-billing
-  service. That service has been retired. The Pool client is still in the code, but
-  its API does not match the `sprite-pipeline-backend` reference implementation
-  (repository not yet published), so Pool mode does not work against that backend
-  without porting the client. See
-  [Pool Mode](addons/sprite_pipeline/README.md#pool-mode-self-hosted-backend) in the
-  addon README.
+- **BYOK (Bring Your Own Key)** — the plugin calls OpenAI directly with an API key
+  you provide. Requests never go through any third-party server.
+- **Pool (shared credits)** — the plugin sends the queue to a
+  sprite-pipeline-backend server with protocol 2.0.0 or later and downloads the
+  results. The original hosted service has been retired; see
+  [Pool Mode](addons/sprite_pipeline/README.md#pool-mode) in the addon README.
 
 ## Installation
 
@@ -51,6 +49,9 @@ sprite-pipeline-plugin/
 │   ├── ui/                    Editor dock and dialogs
 │   ├── cache/                 Local LRU sprite cache
 │   ├── remediation/           Self-healing actions for common errors
+│   ├── prompting.gd           Prompt construction (same text as the backend)
+│   ├── postprocess.gd         Frame slicing, downscaling and grid check
+│   ├── manifest_paths.gd      Manifest path resolution under the output directory
 │   ├── plugin.gd              EditorPlugin entry point
 │   ├── version.gd             Plugin and protocol versions
 │   ├── plugin.cfg             Godot plugin manifest
@@ -66,12 +67,11 @@ sprite-pipeline-plugin/
 
 ## Related Repositories
 
-This plugin was the client half of a larger system. The other repositories:
+This plugin is the client half of a larger system. The other repositories:
 
 - **sprite-pipeline-backend** — FastAPI backend providing Pool mode (auth, credits,
-  Stripe billing, OpenAI proxying) for the hosted service. Its API differs from the
-  plugin's Pool client, so self-hosting it for Pool mode requires porting
-  `addons/sprite_pipeline/api/pool_client.gd`. Repo URL: TBD.
+  Stripe billing, OpenAI proxying). Pool mode in 1.1.0 speaks its protocol 2.0.0.
+  Repo URL: TBD.
 - **sprite-pipeline-web** — Astro/React marketing and dashboard frontend for the
   hosted SaaS. Repo URL: TBD.
 
@@ -83,10 +83,10 @@ build locally (output goes to `dist/`, which is gitignored):
 
 ```bash
 # Linux / macOS
-./scripts/build.sh prod 1.0.0
+./scripts/build.sh prod 1.1.0
 
 # Windows
-.\scripts\build.ps1 -Mode prod -Version 1.0.0
+.\scripts\build.ps1 -Mode prod -Version 1.1.0
 ```
 
 Validation:

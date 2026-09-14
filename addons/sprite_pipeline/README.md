@@ -1,37 +1,44 @@
 # Sprite Pipeline — Godot Plugin
 
-A Godot 4.x editor plugin that generates sprites from text prompts using OpenAI's
-image generation API.
+A Godot 4.x editor plugin that generates sprite sheets from text prompts with
+OpenAI's image models, either with your own API key or through a
+sprite-pipeline-backend server.
 
-![Status](https://img.shields.io/badge/status-archived-lightgrey) ![Version](https://img.shields.io/badge/version-1.0.0-blue) ![Godot](https://img.shields.io/badge/godot-4.2%2B-blue) ![License](https://img.shields.io/badge/license-MIT-green)
+![Status](https://img.shields.io/badge/status-archived-lightgrey) ![Version](https://img.shields.io/badge/version-1.1.0-blue) ![Godot](https://img.shields.io/badge/godot-4.2%2B-blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
 ## Status
 
-**Archived.** Shipped at v1.0.0 in February 2026. The hosted Pool service that
-backed shared-credit mode is no longer running. The plugin is published as an
-engineering reference. Issues and PRs are not monitored.
+**Archived.** Shipped at v1.0.0 in February 2026. Version 1.1.0 (September 2026)
+ports Pool mode to protocol 2.0.0 of sprite-pipeline-backend and moves BYOK to
+OpenAI's gpt-image models. The hosted Pool service that backed shared-credit mode
+in 1.0.0 is no longer running. The plugin is published as an engineering
+reference. Issues and PRs are not monitored.
 
 ## Operation Modes
 
-The plugin supports two modes. **BYOK is the supported path** for the archived
-release.
-
 - **BYOK (Bring Your Own Key)** — your OpenAI API key is stored locally in
-  `user://` and used to call OpenAI's image API (`dall-e-3`) directly. No
-  third-party server is involved. Implemented in
+  `user://` and used to call OpenAI's Images API directly (`gpt-image-2` by
+  default). No third-party server is involved. Implemented in
   [api/byok_client.gd](api/byok_client.gd).
-- **Pool (shared credits)** — was backed by a hosted credit-and-billing service
-  that has been retired. Implemented in [api/pool_client.gd](api/pool_client.gd).
-  The client does not match the API of the `sprite-pipeline-backend` reference
-  implementation; see [Pool Mode](#pool-mode-self-hosted-backend). The
-  **Server URL** field is empty by default.
+- **Pool (shared credits)** — the queue runs as a job on a sprite-pipeline-backend
+  server with protocol 2.0.0 or later. You log in with a device code and use that
+  server's credits. Implemented in [api/pool_client.gd](api/pool_client.gd); see
+  [Pool Mode](#pool-mode). The **Server URL** field is empty by default.
+
+Both modes build the same prompt and process the generated sheet the same way.
 
 ## Features
 
 - **Batch generation** — every entry in a [queue file](#queue-file) becomes one
   sprite sheet.
-- **Automatic import** — sprites are written under your output directory together
-  with a `run_manifest.json`; **Reimport Assets** rescans the project.
+- **Frames** — give an entry `frame_w` and `frame_h`, and the generated sheet is
+  cut into frames, each scaled down to that size and saved as a compact sheet and
+  as single frame files. See [Output](#output).
+- **Grid check** — sprites that spill across cell boundaries are counted as grid
+  warnings in the results.
+- **Automatic import** — files are written under your output directory together
+  with a `run_manifest.json`, and the FileSystem dock is rescanned after each run.
+- **Progress** — the dock shows the current stage and percentage.
 - **Local cache (Pool mode)** — results are cached in `user://sprite_cache/`
   (500 MB by default) so identical requests are not generated twice.
 - **Error reporting** — copy an error summary or export a sanitized bug report
@@ -51,12 +58,27 @@ release.
 1. Get an API key from <https://platform.openai.com/api-keys>.
 2. In the **Sprite Pipeline** dock, click **BYOK (Own Key)**.
 3. Paste your key into **OpenAI API Key**.
-4. Create a [queue file](#queue-file) at `res://sprites/sprite_queue.yaml`, or
+4. Pick an **Image Model** and **Image Quality** (see [BYOK Models](#byok-models)).
+5. Create a [queue file](#queue-file) at `res://sprites/sprite_queue.yaml`, or
    point **Queue File** at your own.
-5. Adjust **Global Style** if needed and click **Generate Sprites**.
+6. Adjust **Global Style** if needed and click **Generate Sprites**.
 
 The key is written to `user://sprite_pipeline_settings.cfg`, outside your project
 folder, and is sent only to OpenAI's API.
+
+## BYOK Models
+
+| Image Model | Notes |
+|---|---|
+| `gpt-image-2` | Default |
+| `gpt-image-1.5` | |
+| `gpt-image-1-mini` | Lower cost |
+| Custom... | Any other Images API model name |
+
+**Image Quality** is `low`, `medium` (default) or `high`. Higher quality costs more
+per image; see OpenAI's pricing page for current prices. Every image is requested
+at 1024×1024 with a transparent background. When OpenAI rate-limits a request
+(HTTP 429), it is retried up to three times.
 
 ## Queue File
 
@@ -68,54 +90,83 @@ must be on their own line.
 ```yaml
 - file_name: hero_walk.png
   category: characters
-  description: knight walking animation
+  prompt: knight walking animation
   frames: 4
   frame_w: 64
   frame_h: 64
   layout: row
 - file_name: enemy_slime.png
   category: monsters
-  description: green slime enemy
+  prompt: green slime enemy
   frames: 2
   layout: row
 ```
-
-Fields used in BYOK mode:
 
 | Field | Meaning | Default |
 |---|---|---|
 | `file_name` | Output file name | `sprite.png` |
 | `category` | Subfolder under the output directory | `misc` |
-| `description` | What to draw | `file_name` without extension, `_` as spaces |
-| `frames` | Number of animation frames | `1` |
-| `frame_w`, `frame_h` | Frame size, used as a prompt hint | `64` |
-| `layout` | `row` for a horizontal strip; any other value for a vertical strip | `row` |
+| `prompt` | What to draw; `description` works too | `file_name` without `.png`, `_` as spaces |
+| `frames` | Frames per row | `1` |
+| `rows` | Rows of frames | `1` |
+| `frame_w`, `frame_h` | Size of each output frame; turns on slicing | not set |
+| `layout` | `row` or `grid`; recorded in the manifest | `row` |
 
-BYOK writes each sprite to `<output directory>/<category>/<file_name>`. DALL-E 3
-returns 1024×1024, 1792×1024 or 1024×1792 images and the plugin does not resize
-them, so frame sizes only steer the prompt. In Pool mode the queue entries are
-sent to the backend unchanged.
+The image is generated as an N×N grid on a 1024×1024 canvas, where N is the larger
+of `frames` and `rows`; cells beyond `frames` and `rows` stay empty.
 
-## Pool Mode (self-hosted backend)
+### Output
 
-> **Compatibility:** the Pool client does not work against the
-> `sprite-pipeline-backend` reference implementation without changes. The backend
-> uses different device-login endpoint paths and a different `/v1/generate`
-> request and response format. To use that backend, port
-> [api/pool_client.gd](api/pool_client.gd) first.
+For the `hero_walk.png` entry above, which sets `frame_w` and `frame_h`:
 
-To point the plugin at a backend that implements the client's protocol:
+| File | Content |
+|---|---|
+| `characters/hero_walk.png` | Compact sheet: `frames × frame_w` wide, `rows × frame_h` high |
+| `characters/hero_walk/frame_<row>_<column>.png` | One file per frame |
+| `characters/hero_walk_raw.png` | The generated 1024×1024 sheet |
 
-1. In the Sprite Pipeline dock, click **Pool (Shared)**.
-2. Enter your backend's base URL in **Server URL**. It must use `https://`; plain
-   `http://` is accepted only for `localhost`, `127.x.x.x` and private-network
-   addresses (`10.x`, `172.16.x`–`172.31.x`, `192.168.x`).
-3. Click **Login with Device Code**, open the verification page (the link appears
-   when the backend returns one) and enter the code shown in the dock.
+Frames are scaled down with nearest-neighbour sampling and never scaled up. An
+entry without `frame_w`/`frame_h`, like `enemy_slime.png`, is saved as the
+generated 1024×1024 sheet. In Pool mode the `_raw.png` file is downloaded only
+when **Download raw sheets** is on.
 
-Tokens are saved to `user://sprite_pipeline_settings.cfg` and restored when the
-editor restarts. Saved settings that still point at the retired hosted service
-(`sprites.pi-agents.dev`) are cleared on load.
+`run_manifest.json` (version 2) lists every sprite with its paths relative to the
+output directory, the SHA-256 of its sheet and `grid_violation`, plus an `errors`
+list for sprites that failed.
+
+## Pool Mode
+
+Pool mode needs a sprite-pipeline-backend server with protocol 2.0.0 or later.
+
+### Server URL
+
+Enter the server's base URL in **Server URL**: your own backend (for example
+`http://localhost:8000` when it runs on your machine) or the FabsLabs backend,
+`https://api.fabslabssprites.com`. The URL must use `https://`; plain `http://` is
+accepted only for `localhost`, `127.x.x.x` and private-network addresses (`10.x`,
+`172.16.x`–`172.31.x`, `192.168.x`).
+
+### Logging In
+
+1. In the Sprite Pipeline dock, click **Pool (Shared)** and enter the **Server URL**.
+2. Click **Login with Device Code**. The dock shows a code and a link to the
+   server's verification page.
+3. Open the page, request a sign-in link for your email address, open the link
+   and enter the code shown in the dock.
+
+The dock then shows your remaining units and the reset date. Tokens are saved to
+`user://sprite_pipeline_settings.cfg` and restored when the editor restarts. Saved
+settings that still point at the retired hosted service (`sprites.pi-agents.dev`)
+are cleared on load.
+
+### Generating
+
+**Generate Sprites** submits the queue as a job and follows it until it finishes;
+the progress bar shows the server's percentage. **Cancel** cancels the job on the
+server. Each file is downloaded and checked against the SHA-256 the server
+reports. Files that fail the check are skipped and listed under `download_errors`
+in `run_manifest.json`. If the server can't be reached while the job runs, the
+plugin retries three times before it gives up.
 
 ## Configuration
 
@@ -127,18 +178,21 @@ All settings are edited in the dock and saved to
 | Queue File | [Queue file](#queue-file) of sprites to generate | `res://sprites/sprite_queue.yaml` |
 | Output Directory | Where sprites and `run_manifest.json` are written | `res://assets/sprites` |
 | Global Style | Free-text style prompt added to every sprite | `pixel art game sprite, …` |
+| Image Model (BYOK) | OpenAI image model | `gpt-image-2` |
+| Image Quality (BYOK) | `low`, `medium` or `high` | `medium` |
 | Server URL (Pool) | Backend base URL | empty |
+| Download raw sheets (Pool) | Also download each sprite's generated 1024×1024 sheet | off |
 | Sprite Cache (Pool) | Cache on/off; size limit under **Settings…** (100–10,000 MB) | on, 500 MB |
 
-BYOK also appends a fixed "clean pixel art, game-ready asset" line to every
-prompt, so other art styles need a change in [api/byok_client.gd](api/byok_client.gd).
+Both modes add fixed instructions about the grid layout and the transparent
+background to every prompt; the wording is in [prompting.gd](prompting.gd).
 
 ## Troubleshooting
 
 ### "Invalid key format" (BYOK)
 
 - The dock expects keys that start with `sk-` (including `sk-proj-`).
-- Check that the OpenAI account has credits.
+- Check that the OpenAI account has credits and access to the selected model.
 
 ### "Queue file not found" / "Failed to parse queue file or queue is empty"
 
@@ -149,14 +203,18 @@ prompt, so other art styles need a change in [api/byok_client.gd](api/byok_clien
 ### "Enter a valid server URL" (Pool)
 
 **Server URL** is empty or was rejected. See the URL rules in
-[Pool Mode](#pool-mode-self-hosted-backend); the **Output** panel shows the exact
-reason.
+[Server URL](#server-url); the **Output** panel shows the exact reason.
 
 ### Login or generation fails (Pool)
 
-- Confirm the backend implements the client's protocol (see the compatibility
-  note in [Pool Mode](#pool-mode-self-hosted-backend)) and is reachable.
+- Confirm the server runs sprite-pipeline-backend with protocol 2.0.0 or later and
+  is reachable.
 - Click **Login with Device Code** again to get fresh tokens.
+
+### Grid warnings
+
+The generated image had sprites crossing cell boundaries, so frames can be cut off.
+Generate the sprite again, or describe fewer or simpler poses.
 
 ### Cached results look wrong
 
@@ -175,13 +233,16 @@ Watch the editor's **Output** panel for `[SpritePipeline]`, `[PoolClient]` and
 - The API key is stored in `user://sprite_pipeline_settings.cfg`, outside the
   project folder.
 - The key is sent only to `https://api.openai.com`.
+- Queue entries whose `category` or `file_name` would write outside the output
+  directory are rejected.
 
 ### Pool mode
 - Device-code login: no password is entered in the editor.
 - Access and refresh tokens are stored in `user://sprite_pipeline_settings.cfg`.
 - The server URL must use HTTPS, except for localhost and private-network
   addresses.
-- Asset paths returned by the server are confined to the output directory.
+- Asset paths returned by the server are confined to the output directory, and
+  every file is checked against its SHA-256 before it is written.
 
 ## Automation (testing)
 
@@ -241,27 +302,30 @@ with socket.create_connection(("127.0.0.1", 19876)) as sock:
 ## FAQ
 
 **Q: How much does generation cost?**
-A: BYOK passes through OpenAI's per-image pricing (~$0.04–0.10 per image at the
-time of release; check current pricing). Pool mode pricing was set by the
-hosted service and no longer applies.
+A: BYOK passes through OpenAI's per-image pricing, which depends on the model and
+the quality; check OpenAI's current pricing. Pool mode uses the credits of the
+server you log in to.
 
 **Q: Can I use this commercially?**
 A: The plugin is MIT-licensed. Generated images are subject to OpenAI's terms.
 
 **Q: What Godot versions are supported?**
-A: Godot 4.2 and later. Godot 3.x is not supported.
+A: Godot 4.2 and later. Godot 3.x is not supported. The headless tests in the
+repository need Godot 4.5 or later.
 
 **Q: Can I generate animations directly?**
-A: The plugin generates spritesheets (multiple frames in one image). Slice and
-animate them in Godot using `AnimatedSprite2D` or `AnimationPlayer`.
+A: Yes. With `frame_w` and `frame_h` set, every frame is saved as its own file and
+the compact sheet has equal cells, ready for `AnimatedSprite2D` or
+`AnimationPlayer`.
 
 **Q: Where are my API keys stored?**
 A: In `user://sprite_pipeline_settings.cfg`, outside the project folder, not
 tracked by version control.
 
 **Q: Can I plug in a different image generation model?**
-A: BYOK is wired to OpenAI's image API only. The model name (`dall-e-3`) and the
-request code are in [api/byok_client.gd](api/byok_client.gd) if you want to fork.
+A: Any OpenAI Images API model: choose **Custom...** under **Image Model** and
+enter its name. Other providers need changes in
+[api/byok_client.gd](api/byok_client.gd).
 
 ## License
 
