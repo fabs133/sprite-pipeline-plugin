@@ -24,23 +24,57 @@ const SpriteCacheClass = preload("res://addons/sprite_pipeline/cache/sprite_cach
 
 # Input validation functions
 static func _validate_url(url: String) -> bool:
-	"""Validate that URL uses HTTPS and has valid format."""
+	"""Validate server URL: HTTPS for any host, plain HTTP only for local or private-network hosts."""
 	if url.is_empty():
 		return false
-	if not url.begins_with("https://") and not url.begins_with("http://localhost"):
-		push_error("Server URL must use HTTPS (or localhost for testing)")
+	var is_https := url.begins_with("https://")
+	if not is_https and not url.begins_with("http://"):
+		push_error("Server URL must start with https:// (or http:// for a local backend)")
+		return false
+	var host := get_url_host(url)
+	if host.is_empty():
+		push_error("Server URL has no valid host")
+		return false
+	if not is_https and not _is_local_host(host):
+		push_error("Plain http:// is only allowed for localhost or private-network addresses; use https://")
 		return false
 	return true
 
-static func _validate_path(path: String) -> bool:
-	"""Validate file path to prevent directory traversal."""
-	if path.is_empty():
+static func get_url_host(url: String) -> String:
+	"""Return the lowercase host of an http(s) URL, or "" if it is malformed or contains credentials."""
+	var scheme_end := url.find("://")
+	if scheme_end == -1:
+		return ""
+	var authority := url.substr(scheme_end + 3)
+	for separator in ["/", "?", "#"]:
+		var separator_pos := authority.find(separator)
+		if separator_pos != -1:
+			authority = authority.substr(0, separator_pos)
+	if authority.is_empty() or "@" in authority or " " in authority:
+		return ""
+	if authority.begins_with("["):
+		var bracket_end := authority.find("]")
+		return authority.substr(1, bracket_end - 1).to_lower() if bracket_end != -1 else ""
+	var port_sep := authority.rfind(":")
+	if port_sep != -1:
+		authority = authority.substr(0, port_sep)
+	return authority.to_lower()
+
+static func _is_local_host(host: String) -> bool:
+	"""True for localhost, loopback, and private-network (RFC 1918) IPv4 addresses."""
+	if host == "localhost" or host == "::1":
+		return true
+	var octets := host.split(".")
+	if octets.size() != 4 or not host.is_valid_ip_address():
 		return false
-	if ".." in path or path.begins_with("/") or path.begins_with("\\"):
-		push_error("Invalid path: directory traversal not allowed")
-		return false
-	if not path.begins_with("res://") and not path.begins_with("user://"):
-		push_error("Path must start with res:// or user://")
+	var first := octets[0].to_int()
+	var second := octets[1].to_int()
+	return first == 127 or first == 10 or (first == 192 and second == 168) or (first == 172 and second >= 16 and second <= 31)
+
+static func _is_safe_relative_path(path: String) -> bool:
+	"""Validate a server-supplied relative path so it cannot escape the directory it is joined to."""
+	if path.is_empty() or path.begins_with("/") or "\\" in path or ":" in path or ".." in path.split("/"):
+		push_error("Rejected unsafe path from server: %s" % path)
 		return false
 	return true
 
@@ -82,9 +116,11 @@ var quota_cache_ttl: int = 300  # 5 minutes
 
 
 func _init(server_url: String) -> void:
+	# An empty URL just means "not configured yet"; only malformed URLs are errors
+	if server_url.is_empty():
+		return
 	if not _validate_url(server_url):
 		push_error("Invalid server URL provided to PoolClient")
-		_server_url = ""
 		return
 	_server_url = server_url.trim_suffix("/")
 
@@ -162,6 +198,16 @@ func _build_headers() -> PackedStringArray:
 
 ## Make HTTP request and handle common errors
 func _make_request(method: int, endpoint: String, body: Dictionary = {}) -> Dictionary:
+	if _server_url.is_empty():
+		return {
+			"success": false,
+			"error": {
+				"code": "NO_SERVER_URL",
+				"message": "No valid server URL configured",
+				"status_code": 0
+			}
+		}
+
 	var http := HTTPRequest.new()
 	Engine.get_main_loop().root.add_child(http)
 
@@ -323,7 +369,7 @@ func start_device_auth() -> Dictionary:
 	auth_started.emit(
 		data.get("device_code", ""),
 		data.get("user_code", ""),
-		data.get("verification_uri", "")
+		data.get("verification_url", data.get("verification_uri", ""))
 	)
 
 	return result
@@ -480,6 +526,9 @@ func _handle_sync_response(data: Dictionary, output_root: String) -> void:
 			var asset_path: String = asset.get("path", "")
 			var asset_url: String = asset.get("url", "")
 			if asset_path and asset_url:
+				# Both values come from the server; never write outside output_root
+				if not _is_safe_relative_path(asset_path) or not _validate_url(asset_url):
+					continue
 				var full_path := output_root.path_join(asset_path)
 				DirAccess.make_dir_recursive_absolute(full_path.get_base_dir())
 				var success := await _download_file(asset_url, full_path)
@@ -528,12 +577,12 @@ func _restore_cached_sprites(inputs_hash: String, manifest: Dictionary, output_r
 			var cached_path := entry_dir.path_join(sprite_name)
 
 			if FileAccess.file_exists(cached_path):
-				# Copy to output
-				var dest_path := output_root.path_join(file_path.replace(output_root, "").trim_prefix("/"))
-				if dest_path == file_path or file_path.begins_with(output_root):
-					dest_path = file_path
-				else:
-					dest_path = output_root.path_join(sprite_name)
+				# Copy to output. file_path comes from a server manifest, so keep it inside output_root
+				var root_prefix := output_root.trim_suffix("/") + "/"
+				var relative_path := file_path.trim_prefix(root_prefix) if file_path.begins_with(root_prefix) else sprite_name
+				if not _is_safe_relative_path(relative_path):
+					continue
+				var dest_path := output_root.path_join(relative_path)
 
 				DirAccess.make_dir_recursive_absolute(dest_path.get_base_dir())
 

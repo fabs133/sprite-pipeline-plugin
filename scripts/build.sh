@@ -40,7 +40,6 @@ cp -r addons/sprite_pipeline/* "$TEMP_DIR/addons/sprite_pipeline/"
 # Remove dev-only files in production mode
 if [ "$MODE" = "prod" ]; then
     echo "Removing dev-only files..."
-    rm -rf "$TEMP_DIR/addons/sprite_pipeline/tests"
     rm -rf "$TEMP_DIR/addons/sprite_pipeline/.git"
     find "$TEMP_DIR" -name "*.pyc" -delete
     find "$TEMP_DIR" -name "__pycache__" -delete

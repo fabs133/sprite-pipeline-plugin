@@ -134,19 +134,13 @@ jobs:
 
             ## 📦 Installation
 
-            ### Option 1: Godot Asset Library
-            1. Open Godot Editor → AssetLib tab
-            2. Search for "Sprite Pipeline"
-            3. Click Download → Install
-
-            ### Option 2: Manual Install
             1. Download `sprite-pipeline-v${{ steps.version.outputs.VERSION }}.zip` below
-            2. Extract to your project's `addons/` folder
+            2. Extract it into your project's root folder (the zip contains `addons/sprite_pipeline/`)
             3. Enable in Project → Project Settings → Plugins
 
             ## 📖 Documentation
 
-            - [README](https://github.com/fabs133/sprite-pipeline-plugin/blob/main/addons/sprite_pipeline/README.md)
+            - [README](https://github.com/fabs133/sprite-pipeline-plugin/blob/master/addons/sprite_pipeline/README.md)
 
             ## 🔐 Checksums
 

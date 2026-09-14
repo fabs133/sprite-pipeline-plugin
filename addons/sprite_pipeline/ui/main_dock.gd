@@ -8,6 +8,8 @@ extends VBoxContainer
 ## Also hosts the AutomationServer for test system integration.
 
 const SETTINGS_PATH := "user://sprite_pipeline_settings.cfg"
+# Hosts of the retired hosted Pool service; saved settings pointing at them are cleared on load
+const RETIRED_POOL_HOSTS := ["sprites.pi-agents.dev"]
 const PLUGIN_VERSION := "0.1.0"
 const PROTOCOL_VERSION := "1"
 
@@ -602,14 +604,21 @@ func _load_settings() -> void:
 		style_edit.text = config.get_value("general", "global_style",
 			"pixel art game sprite, PC hardware themed incremental game, clean silhouette, transparent background")
 		api_key_edit.text = config.get_value("byok", "api_key", "")
-		server_edit.text = config.get_value("pool", "server_url", "")
+		var server_url: String = config.get_value("pool", "server_url", "")
+		var server_retired := PoolClientClass.get_url_host(server_url) in RETIRED_POOL_HOSTS
+		if server_retired:
+			push_warning("[SpritePipeline] Saved Pool server %s is retired; clearing it and its tokens. Enter your own backend URL." % server_url)
+			server_url = ""
+		server_edit.text = server_url
 
-		# Load pool tokens if available
+		# Load pool tokens if available. The client is created here so that later
+		# saves write the tokens back instead of dropping them.
 		var access_token := config.get_value("pool", "access_token", "")
 		var refresh_token := config.get_value("pool", "refresh_token", "")
 		var expires_at: int = config.get_value("pool", "token_expires_at", 0)
 
-		if access_token and _pool_client:
+		if access_token and not server_retired:
+			_create_pool_client(server_url)
 			_pool_client.set_tokens(access_token, refresh_token, expires_at)
 
 		# Load cache settings
@@ -618,6 +627,10 @@ func _load_settings() -> void:
 			_sprite_cache.max_size_mb = config.get_value("cache", "max_size_mb", 500.0)
 			if cache_toggle:
 				cache_toggle.set_pressed_no_signal(_sprite_cache.enabled)
+
+		# Persist the cleared server so the retired host and its tokens leave the settings file
+		if server_retired:
+			_save_settings()
 
 
 func _save_settings() -> void:
@@ -691,19 +704,24 @@ func _on_pool_mode_selected() -> void:
 
 	# Initialize pool client if needed
 	if not _pool_client:
-		_pool_client = PoolClientClass.new(server_edit.text)
-		_pool_client.auth_started.connect(_on_pool_auth_started)
-		_pool_client.auth_completed.connect(_on_pool_auth_completed)
-		_pool_client.auth_failed.connect(_on_pool_auth_failed)
-		_pool_client.quota_updated.connect(_on_quota_updated)
-		_pool_client.generation_started.connect(_on_generation_started)
-		_pool_client.generation_progress.connect(_on_generation_progress)
-		_pool_client.generation_completed.connect(_on_generation_completed)
-		_pool_client.generation_failed.connect(_on_generation_failed)
-		_pool_client.cache_hit.connect(_on_cache_hit)
-		# Set sprite cache on pool client
-		if _sprite_cache:
-			_pool_client.set_sprite_cache(_sprite_cache)
+		_create_pool_client(server_edit.text)
+
+
+## Create the pool client with all dock handlers connected
+func _create_pool_client(server_url: String) -> void:
+	_pool_client = PoolClientClass.new(server_url.strip_edges())
+	_pool_client.auth_started.connect(_on_pool_auth_started)
+	_pool_client.auth_completed.connect(_on_pool_auth_completed)
+	_pool_client.auth_failed.connect(_on_pool_auth_failed)
+	_pool_client.quota_updated.connect(_on_quota_updated)
+	_pool_client.generation_started.connect(_on_generation_started)
+	_pool_client.generation_progress.connect(_on_generation_progress)
+	_pool_client.generation_completed.connect(_on_generation_completed)
+	_pool_client.generation_failed.connect(_on_generation_failed)
+	_pool_client.cache_hit.connect(_on_cache_hit)
+	# Set sprite cache on pool client
+	if _sprite_cache:
+		_pool_client.set_sprite_cache(_sprite_cache)
 
 
 func _on_api_key_changed(_text: String) -> void:
@@ -712,16 +730,15 @@ func _on_api_key_changed(_text: String) -> void:
 
 
 func _on_login_pressed() -> void:
-	if not _pool_client:
-		_on_pool_mode_selected()
+	# A new or changed server URL gets a fresh client; tokens must not carry over to another server
+	var server_url := server_edit.text.strip_edges().trim_suffix("/")
+	if not _pool_client or _pool_client.get_server_url() != server_url:
+		_create_pool_client(server_url)
 
-	_pool_client = PoolClientClass.new(server_edit.text)
-	_pool_client.auth_started.connect(_on_pool_auth_started)
-	_pool_client.auth_completed.connect(_on_pool_auth_completed)
-	_pool_client.auth_failed.connect(_on_pool_auth_failed)
-	# Set sprite cache on pool client
-	if _sprite_cache:
-		_pool_client.set_sprite_cache(_sprite_cache)
+	if _pool_client.get_server_url().is_empty():
+		auth_status.text = "Enter a valid server URL (https://, or http:// for localhost/LAN)"
+		auth_status.add_theme_color_override("font_color", Color(1, 0.4, 0.4))
+		return
 
 	login_button.disabled = true
 	login_button.text = "Starting..."
@@ -733,6 +750,7 @@ func _on_pool_auth_started(device_code: String, user_code: String, verification_
 	device_code_container.visible = true
 	device_code_label.text = user_code
 	verify_link.uri = verification_uri
+	verify_link.visible = not verification_uri.is_empty()
 	login_button.text = "Waiting for authorization..."
 
 	# Start polling for completion

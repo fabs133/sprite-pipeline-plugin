@@ -63,6 +63,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- Asset paths returned by a Pool server are confined to the output directory. Previously a `../` path could overwrite project files, including editor scripts.
+- Server URL validation parses the host: `http://localhost.example.com` is rejected, and plain HTTP is allowed only for localhost, loopback and private-network addresses.
+
+### Fixed
+- Logging in to Pool mode no longer disconnects the quota and generation handlers, so quota and results reach the dock after login.
+- Pool tokens are restored when the editor restarts instead of being erased.
+- The device-login verification link reads `verification_url` (falling back to `verification_uri`).
+- Logging in with an empty or rejected server URL shows a clear message instead of "Failed to start request: 31".
+- Saved settings pointing at the retired `sprites.pi-agents.dev` service are cleared on load.
+
 ### Planned Features
 - Sprite animation preview in editor
 - Custom model support (non-OpenAI)
@@ -87,7 +98,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **1.0.0** (2026-02-12): Initial public release
 - **0.1.0** (2026-01-30): Internal beta release
-
----
-
-For upgrade instructions and migration guides, see the [wiki](https://github.com/fabs133/sprite-pipeline-plugin/wiki/Upgrading).

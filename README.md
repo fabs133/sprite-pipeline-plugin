@@ -23,10 +23,12 @@ Two operation modes are implemented:
   directly with an API key you provide. Requests never go through any third-party
   server.
 - **Pool (shared credits)** — originally backed by a hosted credit-and-billing
-  service. That service has been retired. The plugin code still supports Pool mode
-  against a self-hosted backend. A reference backend implementation is available at
-  [github.com/&lt;owner&gt;/sprite-pipeline-backend](https://github.com/) (URL placeholder
-  pending publication).
+  service. That service has been retired. The Pool client is still in the code, but
+  its API does not match the `sprite-pipeline-backend` reference implementation
+  (repository not yet published), so Pool mode does not work against that backend
+  without porting the client. See
+  [Pool Mode](addons/sprite_pipeline/README.md#pool-mode-self-hosted-backend) in the
+  addon README.
 
 ## Installation
 
@@ -35,7 +37,7 @@ Two operation modes are implemented:
 2. Copy the `addons/sprite_pipeline/` folder into your Godot project's `addons/`
    directory.
 3. In Godot: **Project → Project Settings → Plugins** → enable "Sprite Pipeline".
-4. The "Sprite Pipeline" panel appears at the bottom of the editor.
+4. The "Sprite Pipeline" dock appears in the upper-right dock area of the editor.
 
 For BYOK setup, plugin usage, configuration, and troubleshooting, see the addon
 README at [addons/sprite_pipeline/README.md](addons/sprite_pipeline/README.md).
@@ -49,14 +51,12 @@ sprite-pipeline-plugin/
 │   ├── ui/                    Editor dock and dialogs
 │   ├── cache/                 Local LRU sprite cache
 │   ├── remediation/           Self-healing actions for common errors
-│   ├── resources/             Style presets and prompt templates
 │   ├── plugin.gd              EditorPlugin entry point
 │   ├── plugin.cfg             Godot plugin manifest
 │   ├── README.md              Addon-internal documentation
 │   ├── CHANGELOG.md           Release history
 │   └── LICENSE                MIT license
 ├── scripts/                   Build and validation scripts (PowerShell + Bash)
-├── dist/                      Pre-built release zips
 ├── .github/workflows/         CI for validate / build-dev / build-prod
 └── asset.cfg                  Godot Asset Library metadata
 ```
@@ -66,14 +66,17 @@ sprite-pipeline-plugin/
 This plugin was the client half of a larger system. The other repositories:
 
 - **sprite-pipeline-backend** — FastAPI backend providing Pool mode (auth, credits,
-  Stripe billing, OpenAI proxying). Required if you want to run Pool mode against
-  a self-hosted instance. Repo URL: TBD.
+  Stripe billing, OpenAI proxying) for the hosted service. Its API differs from the
+  plugin's Pool client, so self-hosting it for Pool mode requires porting
+  `addons/sprite_pipeline/api/pool_client.gd`. Repo URL: TBD.
 - **sprite-pipeline-web** — Astro/React marketing and dashboard frontend for the
   hosted SaaS. Repo URL: TBD.
 
 ## Building from Source
 
-The repository ships pre-built zips in [dist/](dist/). To build locally:
+Release zips are attached to
+[GitHub Releases](https://github.com/fabs133/sprite-pipeline-plugin/releases). To
+build locally (output goes to `dist/`, which is gitignored):
 
 ```bash
 # Linux / macOS

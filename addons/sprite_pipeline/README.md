@@ -17,28 +17,25 @@ The plugin supports two modes. **BYOK is the supported path** for the archived
 release.
 
 - **BYOK (Bring Your Own Key)** — your OpenAI API key is stored locally in
-  `user://` and used to call OpenAI directly. No third-party server is involved.
-  Implemented in [api/byok_client.gd](api/byok_client.gd).
-- **Pool (shared credits)** — was originally backed by a hosted credit-and-billing
-  service. That service has been retired. The Pool client still works against a
-  self-hosted backend; see the `sprite-pipeline-backend` reference implementation
-  (URL placeholder pending publication). Implemented in
-  [api/api_client.gd](api/api_client.gd). The default `pool.server_url` setting
-  still points at the original hosted instance and should be overridden in the
-  plugin panel.
+  `user://` and used to call OpenAI's image API (`dall-e-3`) directly. No
+  third-party server is involved. Implemented in
+  [api/byok_client.gd](api/byok_client.gd).
+- **Pool (shared credits)** — was backed by a hosted credit-and-billing service
+  that has been retired. Implemented in [api/pool_client.gd](api/pool_client.gd).
+  The client does not match the API of the `sprite-pipeline-backend` reference
+  implementation; see [Pool Mode](#pool-mode-self-hosted-backend). The
+  **Server URL** field is empty by default.
 
 ## Features
 
-- **Smart caching** — local LRU cache (`user://sprite_pipeline/cache/`, 500 MB
-  default) prevents duplicate generations.
-- **Automatic import** — generated sprites are placed under your configured
-  output root and picked up by Godot's importer.
-- **Multiple styles** — Pixel Art, Cartoon, Flat Vector, Retro 8-bit, Watercolor,
-  Realistic. Selectable globally or per-sprite.
-- **Batch generation** — process JSON queue files producing multiple sprites in
-  one run.
-- **Multi-row spritesheets** — for directional animations (e.g., walk-down,
-  walk-left, walk-right, walk-up in a single sheet).
+- **Batch generation** — every entry in a [queue file](#queue-file) becomes one
+  sprite sheet.
+- **Automatic import** — sprites are written under your output directory together
+  with a `run_manifest.json`; **Reimport Assets** rescans the project.
+- **Local cache (Pool mode)** — results are cached in `user://sprite_cache/`
+  (500 MB by default) so identical requests are not generated twice.
+- **Error reporting** — copy an error summary or export a sanitized bug report
+  from the dock.
 
 ## Installation
 
@@ -47,164 +44,198 @@ release.
    [Releases](https://github.com/fabs133/sprite-pipeline-plugin/releases) and
    extract it.)
 2. **Project → Project Settings → Plugins** → enable "Sprite Pipeline".
-3. The "Sprite Pipeline" panel appears at the bottom of the editor.
+3. The "Sprite Pipeline" dock appears in the upper-right dock area of the editor.
 
 ## Quick Start (BYOK)
 
 1. Get an API key from <https://platform.openai.com/api-keys>.
-2. Open the **Sprite Pipeline** panel.
-3. Select the **BYOK Mode** tab.
-4. Paste your key into **OpenAI API Key**.
-5. Enter a prompt and click **Generate**.
+2. In the **Sprite Pipeline** dock, click **BYOK (Own Key)**.
+3. Paste your key into **OpenAI API Key**.
+4. Create a [queue file](#queue-file) at `res://sprites/sprite_queue.yaml`, or
+   point **Queue File** at your own.
+5. Adjust **Global Style** if needed and click **Generate Sprites**.
 
 The key is written to `user://sprite_pipeline_settings.cfg`, outside your project
 folder, and is sent only to OpenAI's API.
 
+## Queue File
+
+The queue is a flat YAML list. A line starting with `- ` begins a new sprite, and
+the `key: value` lines after it belong to that sprite. Only this subset is parsed:
+nested lists and maps are not supported, JSON is not accepted, and `#` comments
+must be on their own line.
+
+```yaml
+- file_name: hero_walk.png
+  category: characters
+  description: knight walking animation
+  frames: 4
+  frame_w: 64
+  frame_h: 64
+  layout: row
+- file_name: enemy_slime.png
+  category: monsters
+  description: green slime enemy
+  frames: 2
+  layout: row
+```
+
+Fields used in BYOK mode:
+
+| Field | Meaning | Default |
+|---|---|---|
+| `file_name` | Output file name | `sprite.png` |
+| `category` | Subfolder under the output directory | `misc` |
+| `description` | What to draw | `file_name` without extension, `_` as spaces |
+| `frames` | Number of animation frames | `1` |
+| `frame_w`, `frame_h` | Frame size, used as a prompt hint | `64` |
+| `layout` | `row` for a horizontal strip; any other value for a vertical strip | `row` |
+
+BYOK writes each sprite to `<output directory>/<category>/<file_name>`. DALL-E 3
+returns 1024×1024, 1792×1024 or 1024×1792 images and the plugin does not resize
+them, so frame sizes only steer the prompt. In Pool mode the queue entries are
+sent to the backend unchanged.
+
 ## Pool Mode (self-hosted backend)
 
-Pool mode requires a backend that implements the device-code OAuth flow and
-credit/billing endpoints the plugin expects. The original hosted service is
-offline; a reference backend implementation is available in the
-`sprite-pipeline-backend` repository (URL placeholder pending publication).
+> **Compatibility:** the Pool client does not work against the
+> `sprite-pipeline-backend` reference implementation without changes. The backend
+> uses different device-login endpoint paths and a different `/v1/generate`
+> request and response format. To use that backend, port
+> [api/pool_client.gd](api/pool_client.gd) first.
 
-To point the plugin at your own backend:
+To point the plugin at a backend that implements the client's protocol:
 
-1. Open the Sprite Pipeline panel → **Pool Mode** tab.
-2. Edit the **Server URL** field to your backend's base URL.
-3. Click **Login with Device Code** and complete the flow in your browser.
+1. In the Sprite Pipeline dock, click **Pool (Shared)**.
+2. Enter your backend's base URL in **Server URL**. It must use `https://`; plain
+   `http://` is accepted only for `localhost`, `127.x.x.x` and private-network
+   addresses (`10.x`, `172.16.x`–`172.31.x`, `192.168.x`).
+3. Click **Login with Device Code**, open the verification page (the link appears
+   when the backend returns one) and enter the code shown in the dock.
+
+Tokens are saved to `user://sprite_pipeline_settings.cfg` and restored when the
+editor restarts. Saved settings that still point at the retired hosted service
+(`sprites.pi-agents.dev`) are cleared on load.
 
 ## Configuration
 
+All settings are edited in the dock and saved to
+`user://sprite_pipeline_settings.cfg`.
+
 | Setting | Purpose | Default |
 |---|---|---|
-| Output Root | Where generated sprites are saved | `res://assets/sprites` |
-| Queue Path | JSON file with batch requests | (none) |
-| Global Style | Default style applied to generations | Pixel Art |
-| Cache Size | LRU cache budget | 500 MB |
+| Queue File | [Queue file](#queue-file) of sprites to generate | `res://sprites/sprite_queue.yaml` |
+| Output Directory | Where sprites and `run_manifest.json` are written | `res://assets/sprites` |
+| Global Style | Free-text style prompt added to every sprite | `pixel art game sprite, …` |
+| Server URL (Pool) | Backend base URL | empty |
+| Sprite Cache (Pool) | Cache on/off; size limit under **Settings…** (100–10,000 MB) | on, 500 MB |
 
-Cache stats are shown in the panel; **Clear Cache** resets them.
-
-## Usage Examples
-
-### Single sprite
-
-1. Open the Sprite Pipeline panel.
-2. Choose mode (BYOK or Pool).
-3. Enter a prompt: `"a blue slime character, pixel art style"`.
-4. Set frame count and layout.
-5. **Generate.** The sprite is written to your Output Root.
-
-### Batch from JSON queue
-
-```json
-{
-  "queue": [
-    {
-      "file_name": "hero_walk",
-      "category": "character",
-      "prompt": "knight walking animation",
-      "frames": 4,
-      "layout": "row"
-    },
-    {
-      "file_name": "enemy_slime",
-      "category": "monster",
-      "prompt": "green slime enemy",
-      "frames": 2,
-      "layout": "row"
-    }
-  ]
-}
-```
-
-Set **Queue Path** to your JSON and click **Generate**.
-
-### Multi-row spritesheet
-
-```json
-{
-  "file_name": "hero_directional",
-  "category": "character",
-  "frames": 4,
-  "rows": 4,
-  "layout": "grid",
-  "row_descriptions": [
-    {"type": "custom", "prompt": "walking down"},
-    {"type": "custom", "prompt": "walking left"},
-    {"type": "custom", "prompt": "walking right"},
-    {"type": "custom", "prompt": "walking up"}
-  ]
-}
-```
-
-## Supported Styles
-
-Pixel Art, Cartoon, Flat Vector, Retro 8-bit, Watercolor, Realistic. Selectable
-via the Global Style dropdown or per-sprite in the JSON queue.
+BYOK also appends a fixed "clean pixel art, game-ready asset" line to every
+prompt, so other art styles need a change in [api/byok_client.gd](api/byok_client.gd).
 
 ## Troubleshooting
 
-### "Invalid API Key" (BYOK)
+### "Invalid key format" (BYOK)
 
-- Verify the key starts with `sk-` or `sk-proj-`.
+- The dock expects keys that start with `sk-` (including `sk-proj-`).
 - Check that the OpenAI account has credits.
-- Test the key in the [OpenAI playground](https://platform.openai.com/playground).
 
-### "Generation Failed" (Pool)
+### "Queue file not found" / "Failed to parse queue file or queue is empty"
 
-- Confirm the backend `Server URL` in the Pool tab points at a reachable instance.
-- Check your internet connection.
-- Try logging out and back in.
+- Check the **Queue File** path.
+- Make sure the file uses the flat YAML format described in
+  [Queue File](#queue-file).
 
-### "Output directory not writable"
+### "Enter a valid server URL" (Pool)
 
-- Ensure the Output Root path exists.
-- Use `res://...` paths rather than absolute paths.
+**Server URL** is empty or was rejected. See the URL rules in
+[Pool Mode](#pool-mode-self-hosted-backend); the **Output** panel shows the exact
+reason.
+
+### Login or generation fails (Pool)
+
+- Confirm the backend implements the client's protocol (see the compatibility
+  note in [Pool Mode](#pool-mode-self-hosted-backend)) and is reachable.
+- Click **Login with Device Code** again to get fresh tokens.
 
 ### Cached results look wrong
 
-Open the panel → **Cache Stats** → **Clear Cache**.
+In the **Sprite Cache** section, click **Clear Cache**.
 
 ### Plugin debug output
 
-**Editor → Editor Settings → Network → Debug → HTTP Debug**, then watch the
-**Output** panel for `[SpritePipeline]` messages.
+Watch the editor's **Output** panel for `[SpritePipeline]`, `[PoolClient]` and
+`[AutomationServer]` messages.
 
 ## Security & Privacy
 
 ⚠️ **Never commit API keys to version control.**
 
 ### BYOK mode
-- API key is stored in `user://sprite_pipeline_settings.cfg`, outside the
+- The API key is stored in `user://sprite_pipeline_settings.cfg`, outside the
   project folder.
 - The key is sent only to `https://api.openai.com`.
 
 ### Pool mode
-- OAuth device flow — no password is entered.
-- Access tokens are stored in `user://`.
-- All backend calls use HTTPS.
+- Device-code login: no password is entered in the editor.
+- Access and refresh tokens are stored in `user://sprite_pipeline_settings.cfg`.
+- The server URL must use HTTPS, except for localhost and private-network
+  addresses.
+- Asset paths returned by the server are confined to the output directory.
 
-Suggested `.gitignore` additions for projects using the plugin:
+## Automation (testing)
 
+The plugin includes a dev-only automation server for driving the dock from test
+scripts. It runs inside the editor while the plugin is enabled and listens on
+`127.0.0.1:19876`. Enable it with any of:
+
+- the environment variable `SPRITE_PIPELINE_AUTOMATION=1`
+- the command-line flag `--automation` (or `--enable-automation`)
+- `enable_automation=true` in the `[dev]` section of
+  `user://sprite_pipeline_settings.cfg`
+
+The protocol is raw TCP, not HTTP. Every message, in both directions, is a 4-byte
+little-endian length followed by that many bytes of UTF-8 JSON:
+
+```json
+{"command": "start_generate", "args": {"queue_path": "res://sprites/sprite_queue.yaml", "output_root": "res://assets/sprites"}, "request_id": "run-1"}
 ```
-user://
-.godot/
-*.import
-```
 
-## Automation (CI/CD)
+`ping`, `get_state`, `get_events`, `clear_events`, `get_manifest` and
+`get_last_error_context` return their result directly. The other commands
+(`start_generate`, `cancel_generate`, `import_only`, `get_config`, `set_config`,
+`run_doctor`, `get_doctor_report`, `apply_fix`, `verify_fix`) reply
+`{"status": "delegated"}` immediately; poll `get_events` for their results.
 
-The plugin includes an HTTP automation server for headless generation:
+Minimal Python client:
 
-```bash
-export SPRITE_PIPELINE_AUTOMATION=1
-godot --headless --enable-sprite-pipeline-automation
+```python
+import json
+import socket
+import struct
 
-curl http://localhost:8765/generate -X POST -d '{
-  "command": "generate",
-  "queue_path": "res://sprites/queue.json",
-  "output_root": "res://assets/sprites"
-}'
+
+def recv_exact(sock, size):
+    data = b""
+    while len(data) < size:
+        chunk = sock.recv(size - len(data))
+        if not chunk:
+            raise ConnectionError("connection closed")
+        data += chunk
+    return data
+
+
+def send(sock, message):
+    body = json.dumps(message).encode()
+    sock.sendall(struct.pack("<I", len(body)) + body)
+    size = struct.unpack("<I", recv_exact(sock, 4))[0]
+    return json.loads(recv_exact(sock, size))
+
+
+with socket.create_connection(("127.0.0.1", 19876)) as sock:
+    print(send(sock, {"command": "ping"}))
+    print(send(sock, {"command": "start_generate", "args": {"queue_path": "res://sprites/sprite_queue.yaml"}}))
+    print(send(sock, {"command": "get_events", "args": {"since_seq": 0}}))
 ```
 
 ## FAQ
@@ -229,9 +260,8 @@ A: In `user://sprite_pipeline_settings.cfg`, outside the project folder, not
 tracked by version control.
 
 **Q: Can I plug in a different image generation model?**
-A: Only OpenAI's image API is wired up. The relevant code is concentrated in
-[api/byok_client.gd](api/byok_client.gd) and [api/api_client.gd](api/api_client.gd)
-if you want to fork.
+A: BYOK is wired to OpenAI's image API only. The model name (`dall-e-3`) and the
+request code are in [api/byok_client.gd](api/byok_client.gd) if you want to fork.
 
 ## License
 

@@ -56,7 +56,6 @@ if ($Mode -eq "prod") {
     Write-Host "Removing dev-only files..." -ForegroundColor Gray
 
     $devPaths = @(
-        "$pluginDir\tests",
         "$pluginDir\.git"
     )
 
