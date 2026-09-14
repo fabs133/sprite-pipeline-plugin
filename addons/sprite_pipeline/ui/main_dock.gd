@@ -830,9 +830,13 @@ func _on_quota_updated(quota: Dictionary) -> void:
 
 	var remaining: int = quota.get("units_remaining", 0)
 	var total: int = quota.get("units_total", 0)
-	var reset_date: String = quota.get("reset_date", "")
+	var pack_balance: int = quota.get("pack_balance", 0)
+	# The backend sends resets_at; reset_date is the older name
+	var reset_date: String = str(quota.get("resets_at", quota.get("reset_date", "")))
 
 	units_label.text = "Units: %d / %d" % [remaining, total]
+	if pack_balance > 0:
+		units_label.text += " (+%d pack)" % pack_balance
 
 	if total > 0:
 		quota_bar.value = (float(remaining) / float(total)) * 100.0

@@ -87,14 +87,20 @@ static func _sanitize_job_id(job_id: String) -> String:
 	return sanitized
 
 # Endpoints
-const ENDPOINT_DEVICE_START := "/v1/auth/device/start"
-const ENDPOINT_DEVICE_POLL := "/v1/auth/device/poll"
+const ENDPOINT_DEVICE_START := "/v1/auth/device-start"
+const ENDPOINT_DEVICE_POLL := "/v1/auth/device-poll"
 const ENDPOINT_REFRESH := "/v1/auth/refresh"
 const ENDPOINT_QUOTA := "/v1/quota"
 const ENDPOINT_GENERATE := "/v1/generate"
 const ENDPOINT_JOB_STATUS := "/v1/jobs/%s"
 const ENDPOINT_JOB_CANCEL := "/v1/jobs/%s/cancel"
 const ENDPOINT_JOB_RESULT := "/v1/jobs/%s/result"
+
+# Messages for device-poll statuses that end the login
+const DEVICE_STATUS_MESSAGES := {
+	"expired": "The device code expired. Click Login to get a new code.",
+	"denied": "The login was denied.",
+}
 
 var _server_url: String = ""
 var _access_token: String = ""
@@ -374,23 +380,31 @@ func start_device_auth() -> Dictionary:
 	return result
 
 
-## Poll for device authentication completion
+## Poll for device authentication completion.
+## The backend answers 200 {"status": "pending"} until the code is approved and
+## then 200 with tokens; "expired" and "denied" end the login.
 func poll_device_auth(device_code: String) -> Dictionary:
 	var body := {"device_code": device_code}
 	var result := await _make_request(HTTPClient.METHOD_POST, ENDPOINT_DEVICE_POLL, body)
 
 	if not result["success"]:
-		# "authorization_pending" is expected while waiting
-		if result["error"].get("code") == "authorization_pending":
-			return result
 		auth_failed.emit(result["error"])
 		return result
 
 	var data: Dictionary = result["data"]
-	_access_token = data.get("access_token", "")
-	_refresh_token = data.get("refresh_token", "")
-	_token_expires_at = data.get("expires_at", 0)
+	var access_token = data.get("access_token")
+	if not (access_token is String and not access_token.is_empty()):
+		var status := str(data.get("status", "unknown"))
+		var error := {"code": "authorization_pending", "message": "Waiting for authorization"}
+		if status != "pending":
+			error = {
+				"code": "device_code_%s" % status,
+				"message": DEVICE_STATUS_MESSAGES.get(status, "Unexpected device login status: %s" % status)
+			}
+			auth_failed.emit(error)
+		return {"success": false, "error": error}
 
+	_apply_token_response(data)
 	auth_completed.emit(_access_token)
 	return result
 
@@ -413,12 +427,27 @@ func refresh_auth() -> Dictionary:
 		auth_failed.emit(result["error"])
 		return result
 
-	var data: Dictionary = result["data"]
+	_apply_token_response(result["data"])
+	return result
+
+
+## Store the tokens of a device-poll or refresh response
+func _apply_token_response(data: Dictionary) -> void:
 	_access_token = data.get("access_token", "")
 	_refresh_token = data.get("refresh_token", _refresh_token)
-	_token_expires_at = data.get("expires_at", 0)
+	_token_expires_at = token_expiry(data, int(Time.get_unix_time_from_system()))
 
-	return result
+
+## Unix time a token response expires at. The backend sends a lifetime in seconds
+## (expires_in); an absolute expires_at is accepted too. 0 means unknown.
+static func token_expiry(data: Dictionary, now: int) -> int:
+	var expires_in = data.get("expires_in")
+	if expires_in is int or expires_in is float:
+		return now + int(expires_in)
+	var expires_at = data.get("expires_at")
+	if expires_at is int or expires_at is float:
+		return int(expires_at)
+	return 0
 
 
 # ==================== Quota ====================
