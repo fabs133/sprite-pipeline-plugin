@@ -19,6 +19,10 @@ const AutomationServer := preload("res://addons/sprite_pipeline/api/automation_s
 # Sprite cache for local caching
 const SpriteCacheClass := preload("res://addons/sprite_pipeline/cache/sprite_cache.gd")
 
+# Editor calls (FileSystem scans, reimports, project settings) and consent dialogs
+const EditorIntegration := preload("res://addons/sprite_pipeline/editor_integration.gd")
+const ConsentGate := preload("res://addons/sprite_pipeline/remediation/consent_gate.gd")
+
 # Node references (set in _ready)
 @onready var byok_button: Button = $ModeSection/ModeButtons/BYOKButton
 @onready var pool_button: Button = $ModeSection/ModeButtons/PoolButton
@@ -59,6 +63,9 @@ const SpriteCacheClass := preload("res://addons/sprite_pipeline/cache/sprite_cac
 @onready var results_label: Label = $StatusSection/ResultsSection/ResultsLabel
 @onready var open_output_button: Button = $StatusSection/ResultsSection/OpenOutputButton
 @onready var reimport_button: Button = $StatusSection/ResultsSection/ReimportButton
+@onready var filter_row: HBoxContainer = $StatusSection/ResultsSection/FilterRow
+@onready var filter_label: Label = $StatusSection/ResultsSection/FilterRow/FilterLabel
+@onready var filter_button: Button = $StatusSection/ResultsSection/FilterRow/FilterButton
 @onready var export_report_button: Button = $StatusSection/ErrorSection/ErrorButtons/ExportReportButton
 
 # Cache UI nodes
@@ -85,6 +92,12 @@ var _is_generating: bool = false
 var _last_error: Dictionary = {}
 var _last_manifest: Dictionary = {}
 var _device_poll_timer: Timer = null
+# SpriteEditorIntegration; tests put a stub with the same methods here
+var _editor = EditorIntegration
+var _consent_gate := ConsentGate.new()
+# [editor] filter_prompt_dismissed: "Don't ask again" on the Nearest filter offer
+var _filter_prompt_dismissed := false
+var _filter_dialog_open := false
 
 # Automation server instance (for test system)
 var _automation_server = null  # AutomationServer
@@ -142,6 +155,9 @@ func force_initialize() -> void:
 	results_label = get_node_or_null("StatusSection/ResultsSection/ResultsLabel")
 	open_output_button = get_node_or_null("StatusSection/ResultsSection/OpenOutputButton")
 	reimport_button = get_node_or_null("StatusSection/ResultsSection/ReimportButton")
+	filter_row = get_node_or_null("StatusSection/ResultsSection/FilterRow")
+	filter_label = get_node_or_null("StatusSection/ResultsSection/FilterRow/FilterLabel")
+	filter_button = get_node_or_null("StatusSection/ResultsSection/FilterRow/FilterButton")
 	export_report_button = get_node_or_null("StatusSection/ErrorSection/ErrorButtons/ExportReportButton")
 	cache_section = get_node_or_null("CacheSection")
 	cache_toggle = get_node_or_null("CacheSection/CacheSectionHeader/CacheToggle")
@@ -603,6 +619,8 @@ func _setup_connections() -> void:
 	copy_error_button.pressed.connect(_on_copy_error_pressed)
 	open_output_button.pressed.connect(_on_open_output_pressed)
 	reimport_button.pressed.connect(_on_reimport_pressed)
+	if filter_button:
+		filter_button.pressed.connect(_on_filter_button_pressed)
 
 	# Export report (optional node)
 	if export_report_button:
@@ -638,6 +656,7 @@ func _load_settings() -> void:
 		server_edit.text = server_url
 		if download_raw_check:
 			download_raw_check.set_pressed_no_signal(config.get_value("pool", "download_raw", false))
+		_filter_prompt_dismissed = config.get_value("editor", "filter_prompt_dismissed", false)
 
 		# Load pool tokens if available. The client is created here so that later
 		# saves write the tokens back instead of dropping them.
@@ -678,6 +697,8 @@ func _save_settings() -> void:
 		config.set_value("pool", "access_token", _pool_client._access_token)
 		config.set_value("pool", "refresh_token", _pool_client._refresh_token)
 		config.set_value("pool", "token_expires_at", _pool_client._token_expires_at)
+
+	config.set_value("editor", "filter_prompt_dismissed", _filter_prompt_dismissed)
 
 	# Save cache settings
 	if _sprite_cache:
@@ -1090,10 +1111,7 @@ func _on_generation_completed(manifest: Dictionary) -> void:
 	progress_bar.visible = false
 
 	# Show the new files in the FileSystem dock without pressing Reimport
-	if Engine.is_editor_hint():
-		var filesystem := EditorInterface.get_resource_filesystem()
-		if filesystem:
-			filesystem.scan()
+	_editor.scan()
 
 	# Notify automation server
 	if _automation_server:
@@ -1104,6 +1122,56 @@ func _on_generation_completed(manifest: Dictionary) -> void:
 			"error_count": error_count,
 			"safe_mode_count": safe_mode_count
 		})
+
+	_update_filter_row()
+	# Last, and not awaited, so the dialog never holds up the results
+	_offer_nearest_filter()
+
+
+## Show the project's default texture filter under the results, in the editor only
+func _update_filter_row() -> void:
+	if not filter_row:
+		return
+	filter_row.visible = _editor.is_editor()
+	filter_label.text = filter_status_text(_editor.project_filter())
+	filter_button.visible = not _editor.project_filter_is_nearest()
+
+
+## "Pixel-art filtering: <filter> ✓" for filters that keep pixel art sharp, "⚠" otherwise
+static func filter_status_text(filter: int) -> String:
+	var names: Array = EditorIntegration.FILTER_NAMES
+	var filter_name: String = names[filter] if filter >= 0 and filter < names.size() else "Unknown"
+	var sharp := filter in [EditorIntegration.FILTER_NEAREST, EditorIntegration.FILTER_NEAREST_MIPMAP]
+	return "Pixel-art filtering: %s %s" % [filter_name, "✓" if sharp else "⚠"]
+
+
+func _on_filter_button_pressed() -> void:
+	_offer_nearest_filter(true)
+
+
+## Ask before setting the project's default texture filter to Nearest. After a generation
+## the dialog appears unless the user chose "Don't ask again"; the button in the results
+## section asks regardless.
+func _offer_nearest_filter(asked_by_user := false) -> void:
+	if not _editor.is_editor() or _editor.project_filter_is_nearest() or _filter_dialog_open:
+		return
+	if _filter_prompt_dismissed and not asked_by_user:
+		return
+
+	_filter_dialog_open = true
+	var answer: Dictionary = await _consent_gate.ask(ConsentGate.PROJECT_FILTER_NEAREST, self)
+	_filter_dialog_open = false
+	if answer["dont_ask_again"] and not _filter_prompt_dismissed:
+		_filter_prompt_dismissed = true
+		_save_settings()
+	if _consent_gate.consume_token(ConsentGate.PROJECT_FILTER_NEAREST, answer["token"]):
+		var err: Error = _editor.set_project_filter_nearest()
+		if err == OK:
+			status_text.text = "Project texture filter set to Nearest"
+			status_text.remove_theme_color_override("font_color")
+		else:
+			_show_error("Could not save the texture filter to project.godot: %s" % error_string(err))
+	_update_filter_row()
 
 
 ## Number of results whose sheet failed the grid gutter check
@@ -1235,16 +1303,9 @@ func _on_open_output_pressed() -> void:
 
 
 func _on_reimport_pressed() -> void:
-	var output_path = output_path_edit.text
-
-	# Get EditorInterface to reimport (Godot 4.2+ API)
-	if Engine.is_editor_hint():
-		var fs = EditorInterface.get_resource_filesystem()
-		if fs:
-			fs.scan()
-			status_text.text = "Assets reimported"
-		else:
-			status_text.text = "Could not access filesystem"
+	if _editor.is_editor():
+		_editor.scan()
+		status_text.text = "Assets reimported"
 	else:
 		status_text.text = "Reimport only works in editor"
 

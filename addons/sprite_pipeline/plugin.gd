@@ -89,6 +89,7 @@ func _save_default_settings() -> void:
 	config.set_value("pool", "refresh_token", "")
 	config.set_value("pool", "token_expires_at", 0)
 	config.set_value("pool", "download_raw", false)  # Also download unprocessed 1024x1024 sheets
+	config.set_value("editor", "filter_prompt_dismissed", false)  # Stop offering Nearest texture filtering after generation
 	config.save(_settings_path)
 
 

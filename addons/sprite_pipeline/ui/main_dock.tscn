@@ -362,3 +362,17 @@ text = "Open Output Folder"
 [node name="ReimportButton" type="Button" parent="StatusSection/ResultsSection"]
 layout_mode = 2
 text = "Reimport Assets"
+
+[node name="FilterRow" type="HBoxContainer" parent="StatusSection/ResultsSection"]
+visible = false
+layout_mode = 2
+
+[node name="FilterLabel" type="Label" parent="StatusSection/ResultsSection/FilterRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Pixel-art filtering: Linear ⚠"
+
+[node name="FilterButton" type="Button" parent="StatusSection/ResultsSection/FilterRow"]
+layout_mode = 2
+tooltip_text = "Set the project's default 2D texture filter to Nearest"
+text = "Set to Nearest..."
