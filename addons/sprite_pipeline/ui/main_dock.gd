@@ -151,8 +151,6 @@ func force_initialize() -> void:
 	clear_cache_button = get_node_or_null("CacheSection/CacheButtons/ClearCacheButton")
 	cache_settings_button = get_node_or_null("CacheSection/CacheButtons/CacheSettingsButton")
 
-	print_debug("[SpritePipeline] Node references obtained, api_key_edit=%s, queue_path_edit=%s" % [api_key_edit, queue_path_edit])
-
 	# Now do the initialization that _ready would do
 	_init_sprite_cache()
 	_setup_byok_model_options()
@@ -266,11 +264,7 @@ func _init_sprite_cache() -> void:
 		_sprite_cache.cache_updated.connect(_on_cache_updated)
 
 
-var _process_count := 0
 func _process(_delta: float) -> void:
-	_process_count += 1
-	if _process_count <= 3:
-		print_debug("[SpritePipeline] _process called (count=%d)" % _process_count)
 	# Poll automation server for incoming commands
 	if _automation_server and _automation_enabled:
 		_automation_server.poll()
