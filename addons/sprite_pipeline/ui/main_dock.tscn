@@ -80,6 +80,31 @@ layout_mode = 2
 text = "Not configured"
 theme_override_colors/font_color = Color(1, 0.6, 0.2, 1)
 
+[node name="ImageModelLabel" type="Label" parent="AuthSection/BYOKAuth"]
+layout_mode = 2
+text = "Image Model:"
+
+[node name="ImageModelRow" type="HBoxContainer" parent="AuthSection/BYOKAuth"]
+layout_mode = 2
+
+[node name="ImageModelOption" type="OptionButton" parent="AuthSection/BYOKAuth/ImageModelRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="CustomModelEdit" type="LineEdit" parent="AuthSection/BYOKAuth/ImageModelRow"]
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "model name"
+
+[node name="ImageQualityLabel" type="Label" parent="AuthSection/BYOKAuth"]
+layout_mode = 2
+text = "Image Quality:"
+
+[node name="ImageQualityOption" type="OptionButton" parent="AuthSection/BYOKAuth"]
+layout_mode = 2
+tooltip_text = "Higher quality costs more per image"
+
 [node name="PoolAuth" type="VBoxContainer" parent="AuthSection"]
 visible = false
 layout_mode = 2

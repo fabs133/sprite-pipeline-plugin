@@ -27,6 +27,9 @@ const SpriteCacheClass := preload("res://addons/sprite_pipeline/cache/sprite_cac
 @onready var pool_auth: VBoxContainer = $AuthSection/PoolAuth
 @onready var api_key_edit: LineEdit = $AuthSection/BYOKAuth/APIKeyEdit
 @onready var key_status: Label = $AuthSection/BYOKAuth/KeyStatus
+@onready var image_model_option: OptionButton = $AuthSection/BYOKAuth/ImageModelRow/ImageModelOption
+@onready var custom_model_edit: LineEdit = $AuthSection/BYOKAuth/ImageModelRow/CustomModelEdit
+@onready var image_quality_option: OptionButton = $AuthSection/BYOKAuth/ImageQualityOption
 @onready var server_edit: LineEdit = $AuthSection/PoolAuth/ServerEdit
 @onready var auth_status: Label = $AuthSection/PoolAuth/AuthStatus
 @onready var login_button: Button = $AuthSection/PoolAuth/LoginButton
@@ -69,6 +72,9 @@ const SpriteCacheClass := preload("res://addons/sprite_pipeline/cache/sprite_cac
 
 # Preload client classes to avoid parse-time type resolution issues
 const BYOKClientClass = preload("res://addons/sprite_pipeline/api/byok_client.gd")
+const Prompting := preload("res://addons/sprite_pipeline/prompting.gd")
+# Last entry of the BYOK model picker; it shows a field for any other model name
+const CUSTOM_MODEL_LABEL := "Custom..."
 const PoolClientClass = preload("res://addons/sprite_pipeline/api/pool_client.gd")
 
 # State
@@ -107,6 +113,9 @@ func force_initialize() -> void:
 	pool_auth = get_node_or_null("AuthSection/PoolAuth")
 	api_key_edit = get_node_or_null("AuthSection/BYOKAuth/APIKeyEdit")
 	key_status = get_node_or_null("AuthSection/BYOKAuth/KeyStatus")
+	image_model_option = get_node_or_null("AuthSection/BYOKAuth/ImageModelRow/ImageModelOption")
+	custom_model_edit = get_node_or_null("AuthSection/BYOKAuth/ImageModelRow/CustomModelEdit")
+	image_quality_option = get_node_or_null("AuthSection/BYOKAuth/ImageQualityOption")
 	server_edit = get_node_or_null("AuthSection/PoolAuth/ServerEdit")
 	auth_status = get_node_or_null("AuthSection/PoolAuth/AuthStatus")
 	login_button = get_node_or_null("AuthSection/PoolAuth/LoginButton")
@@ -146,6 +155,7 @@ func force_initialize() -> void:
 
 	# Now do the initialization that _ready would do
 	_init_sprite_cache()
+	_setup_byok_model_options()
 	_load_settings()
 	_setup_connections()
 	_update_ui_for_mode()
@@ -213,6 +223,7 @@ func _ready() -> void:
 		return
 
 	_init_sprite_cache()
+	_setup_byok_model_options()
 	_load_settings()
 	_setup_connections()
 	_update_ui_for_mode()
@@ -577,6 +588,12 @@ func _setup_connections() -> void:
 
 	# BYOK auth
 	api_key_edit.text_changed.connect(_on_api_key_changed)
+	if image_model_option:
+		image_model_option.item_selected.connect(_on_image_model_selected)
+	if custom_model_edit:
+		custom_model_edit.text_changed.connect(_on_custom_model_changed)
+	if image_quality_option:
+		image_quality_option.item_selected.connect(_on_image_quality_selected)
 
 	# Pool auth
 	login_button.pressed.connect(_on_login_pressed)
@@ -617,6 +634,8 @@ func _load_settings() -> void:
 		style_edit.text = config.get_value("general", "global_style",
 			"pixel art game sprite, PC hardware themed incremental game, clean silhouette, transparent background")
 		api_key_edit.text = config.get_value("byok", "api_key", "")
+		_select_image_model(config.get_value("byok", "image_model", BYOKClientClass.DEFAULT_IMAGE_MODEL))
+		_select_image_quality(config.get_value("byok", "image_quality", BYOKClientClass.DEFAULT_IMAGE_QUALITY))
 		var server_url: String = config.get_value("pool", "server_url", "")
 		var server_retired := PoolClientClass.get_url_host(server_url) in RETIRED_POOL_HOSTS
 		if server_retired:
@@ -655,6 +674,8 @@ func _save_settings() -> void:
 	config.set_value("general", "output_root", output_path_edit.text)
 	config.set_value("general", "global_style", style_edit.text)
 	config.set_value("byok", "api_key", api_key_edit.text)
+	config.set_value("byok", "image_model", _selected_image_model())
+	config.set_value("byok", "image_quality", _selected_image_quality())
 	config.set_value("pool", "server_url", server_edit.text)
 	if download_raw_check:
 		config.set_value("pool", "download_raw", download_raw_check.button_pressed)
@@ -752,6 +773,71 @@ func _on_api_key_changed(_text: String) -> void:
 func _on_download_raw_toggled(pressed: bool) -> void:
 	if _pool_client:
 		_pool_client.download_raw = pressed
+	_save_settings()
+
+
+## Fill the BYOK model and quality pickers and select the defaults
+func _setup_byok_model_options() -> void:
+	if image_model_option and image_model_option.item_count == 0:
+		for model in BYOKClientClass.IMAGE_MODELS:
+			image_model_option.add_item(model)
+		image_model_option.add_item(CUSTOM_MODEL_LABEL)
+	if image_quality_option and image_quality_option.item_count == 0:
+		for quality in BYOKClientClass.IMAGE_QUALITIES:
+			image_quality_option.add_item(quality)
+	_select_image_model(BYOKClientClass.DEFAULT_IMAGE_MODEL)
+	_select_image_quality(BYOKClientClass.DEFAULT_IMAGE_QUALITY)
+
+
+## Select a preset model, or Custom with the name in the custom field
+func _select_image_model(model: String) -> void:
+	if not image_model_option:
+		return
+	var preset_index := BYOKClientClass.IMAGE_MODELS.find(model)
+	var is_custom := preset_index == -1 and not model.is_empty()
+	image_model_option.select(image_model_option.item_count - 1 if is_custom else maxi(preset_index, 0))
+	if custom_model_edit:
+		custom_model_edit.visible = is_custom
+		if is_custom:
+			custom_model_edit.text = model
+
+
+func _selected_image_model() -> String:
+	if not image_model_option:
+		return BYOKClientClass.DEFAULT_IMAGE_MODEL
+	var index := image_model_option.selected
+	if index >= 0 and index < BYOKClientClass.IMAGE_MODELS.size():
+		return BYOKClientClass.IMAGE_MODELS[index]
+	var custom_model := custom_model_edit.text.strip_edges() if custom_model_edit else ""
+	return custom_model if not custom_model.is_empty() else BYOKClientClass.DEFAULT_IMAGE_MODEL
+
+
+func _select_image_quality(quality: String) -> void:
+	if not image_quality_option:
+		return
+	var index := BYOKClientClass.IMAGE_QUALITIES.find(quality)
+	if index == -1:
+		index = BYOKClientClass.IMAGE_QUALITIES.find(BYOKClientClass.DEFAULT_IMAGE_QUALITY)
+	image_quality_option.select(index)
+
+
+func _selected_image_quality() -> String:
+	if image_quality_option and image_quality_option.selected >= 0:
+		return BYOKClientClass.IMAGE_QUALITIES[image_quality_option.selected]
+	return BYOKClientClass.DEFAULT_IMAGE_QUALITY
+
+
+func _on_image_model_selected(index: int) -> void:
+	if custom_model_edit:
+		custom_model_edit.visible = index >= BYOKClientClass.IMAGE_MODELS.size()
+	_save_settings()
+
+
+func _on_custom_model_changed(_text: String) -> void:
+	_save_settings()
+
+
+func _on_image_quality_selected(_index: int) -> void:
 	_save_settings()
 
 
@@ -885,7 +971,8 @@ func _on_generate_pressed() -> void:
 
 	# Load and parse queue
 	var queue_text := FileAccess.get_file_as_string(queue_path)
-	var queue_data := _parse_yaml_queue(queue_text)
+	# A description without a prompt becomes the prompt, in both modes
+	var queue_data := Prompting.normalize_queue(_parse_yaml_queue(queue_text))
 	print_debug("[SpritePipeline] Parsed %d items from queue" % queue_data.size())
 
 	if queue_data.is_empty():
@@ -923,8 +1010,11 @@ func _start_byok_generation(queue_data: Array, output_root: String, global_style
 		return
 
 	_byok_client = BYOKClientClass.new(api_key)
+	_byok_client.set_image_model(_selected_image_model())
+	_byok_client.set_image_quality(_selected_image_quality())
 	_byok_client.generation_started.connect(_on_generation_started)
 	_byok_client.generation_progress.connect(_on_generation_progress)
+	_byok_client.generation_percent.connect(_on_generation_percent)
 	_byok_client.generation_completed.connect(_on_generation_completed)
 	_byok_client.generation_failed.connect(_on_generation_failed)
 

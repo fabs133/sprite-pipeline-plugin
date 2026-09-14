@@ -82,6 +82,8 @@ func _save_default_settings() -> void:
 	config.set_value("general", "output_root", "res://assets/sprites")
 	config.set_value("general", "global_style", "pixel art game sprite, clean silhouette, transparent background")
 	config.set_value("byok", "api_key", "")  # User must set this
+	config.set_value("byok", "image_model", "gpt-image-2")  # gpt-image-2, gpt-image-1.5, gpt-image-1-mini or another model name
+	config.set_value("byok", "image_quality", "medium")  # low, medium or high
 	config.set_value("pool", "server_url", "")  # User must enter a self-hosted backend URL (original hosted service retired)
 	config.set_value("pool", "access_token", "")
 	config.set_value("pool", "refresh_token", "")
