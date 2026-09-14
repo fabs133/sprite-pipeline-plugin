@@ -7,11 +7,13 @@ extends RefCounted
 ## Use when: Assets were deleted, import failed, need to restore files.
 
 const ACTION_ID := "reimport_manifest"
+# Preloaded: .gdignore keeps the ConsentGate class name out of the global class list
+const ConsentGateScript := preload("res://addons/sprite_pipeline/remediation/consent_gate.gd")
 
 
 ## Execute the reimport action
 ## Returns: {success: bool, message: String, details: Dictionary}
-func execute(consent_token: String, consent_gate: ConsentGate, manifest: Dictionary, output_root: String) -> Dictionary:
+func execute(consent_token: String, consent_gate: ConsentGateScript, manifest: Dictionary, output_root: String) -> Dictionary:
 	# Validate consent
 	if not consent_gate.consume_token(ACTION_ID, consent_token):
 		return {

@@ -7,6 +7,8 @@ extends RefCounted
 ## Use when: Corrupted state, fresh start needed, troubleshooting.
 
 const ACTION_ID := "clean_cache"
+# Preloaded: .gdignore keeps the ConsentGate class name out of the global class list
+const ConsentGateScript := preload("res://addons/sprite_pipeline/remediation/consent_gate.gd")
 
 ## Files to clean
 const CACHE_FILES := [
@@ -18,7 +20,7 @@ const CACHE_FILES := [
 
 ## Execute the cache clean action
 ## Returns: {success: bool, message: String, details: Dictionary}
-func execute(consent_token: String, consent_gate: ConsentGate) -> Dictionary:
+func execute(consent_token: String, consent_gate: ConsentGateScript) -> Dictionary:
 	# Validate consent
 	if not consent_gate.consume_token(ACTION_ID, consent_token):
 		return {

@@ -7,12 +7,14 @@ extends RefCounted
 ## Use when: Token corruption, need to switch accounts, security concern.
 
 const ACTION_ID := "auth_reset"
+# Preloaded: .gdignore keeps the ConsentGate class name out of the global class list
+const ConsentGateScript := preload("res://addons/sprite_pipeline/remediation/consent_gate.gd")
 const SETTINGS_PATH := "user://sprite_pipeline_settings.cfg"
 
 
 ## Execute the auth reset action
 ## Returns: {success: bool, message: String, details: Dictionary}
-func execute(consent_token: String, consent_gate: ConsentGate) -> Dictionary:
+func execute(consent_token: String, consent_gate: ConsentGateScript) -> Dictionary:
 	# Validate consent
 	if not consent_gate.consume_token(ACTION_ID, consent_token):
 		return {
