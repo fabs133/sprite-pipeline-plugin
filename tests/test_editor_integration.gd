@@ -10,7 +10,7 @@ func test_outside_the_editor_nothing_changes() -> void:
 	check(not EditorIntegration.project_filter_is_nearest(), "Linear is not nearest")
 	check_eq(EditorIntegration.set_project_filter_nearest(), ERR_UNAVAILABLE, "no project.godot write")
 	check_eq(EditorIntegration.project_filter(), EditorIntegration.FILTER_DEFAULT, "setting unchanged")
-	await EditorIntegration.scan_and_wait()
+	await EditorIntegration.scan_and_wait(PackedStringArray(["res://missing.png"]))
 	EditorIntegration.scan()
 	EditorIntegration.reimport(PackedStringArray(["res://missing.png"]))
 
@@ -24,3 +24,35 @@ func test_filter_constants_match_the_project_setting() -> void:
 			check_eq(ProjectSettings.property_get_revert(EditorIntegration.FILTER_SETTING), EditorIntegration.FILTER_DEFAULT, "default")
 			return
 	failures.append("%s not found" % EditorIntegration.FILTER_SETTING)
+
+
+func test_only_project_files_without_import_settings_are_pending() -> void:
+	var root := make_temp_dir("not_imported")
+	check_eq(EditorIntegration._not_imported(PackedStringArray(["res://missing.png", root.path_join("x.png"), "C:/game/out/x.png"])), PackedStringArray(["res://missing.png"]), "only res:// paths wait for an import")
+	remove_dir(root)
+
+
+func test_spriteframes_path_keeps_an_existing_tres_unless_told_otherwise() -> void:
+	var root := make_temp_dir("spriteframes_path")
+	var sheet := root.path_join("hero.png")
+	check_eq(EditorIntegration.spriteframes_path(sheet, false), root.path_join("hero.tres"), "no .tres yet")
+	var file := FileAccess.open(root.path_join("hero.tres"), FileAccess.WRITE)
+	file.store_string("[gd_resource type=\"SpriteFrames\" format=3]\n")
+	file.close()
+	check_eq(EditorIntegration.spriteframes_path(sheet, false), root.path_join("hero.generated.tres"), "existing .tres kept")
+	check_eq(EditorIntegration.spriteframes_path(sheet, true), root.path_join("hero.tres"), "overwrite")
+	remove_dir(root)
+
+
+func test_write_spriteframes_skips_sheets_that_are_not_imported() -> void:
+	var root := make_temp_dir("spriteframes_write")
+	DirAccess.make_dir_recursive_absolute(root.path_join("characters"))
+	var image := Image.create_empty(64, 32, false, Image.FORMAT_RGBA8)
+	image.save_png(root.path_join("characters/hero.png"))
+	var manifest := {"results": [
+		{"file_path": "characters/hero.png", "frames": 2.0, "rows": 1.0, "frame_w": 32.0, "frame_h": 32.0},
+		{"file_path": "characters/still.png", "frames": 1.0, "rows": 1.0, "frame_w": 32.0, "frame_h": 32.0},
+	]}
+	check_eq(EditorIntegration.write_spriteframes(manifest, root, 8.0, true), PackedStringArray(), "nothing written")
+	check(not FileAccess.file_exists(root.path_join("characters/hero.tres")), "no .tres for a PNG Godot has not imported")
+	remove_dir(root)

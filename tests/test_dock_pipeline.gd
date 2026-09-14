@@ -10,15 +10,25 @@ const MANIFEST := {"version": 2, "errors": [], "results": [
 ]}
 
 
+## A dock with default editor settings that never shows the texture filter dialog
 func _dock(stub: StubEditor) -> Node:
 	var dock := DockScene.instantiate()
 	tree.root.add_child(dock)
 	dock._editor = stub
 	dock._last_output_root = ROOT
 	dock._pin_import_params = true
-	# Keeps the texture filter dialog out of these tests
+	dock._spriteframes_loop = true
+	dock._overwrite_spriteframes = false
+	dock.write_spriteframes_check.set_pressed_no_signal(true)
+	dock.spriteframes_fps_spin.set_value_no_signal(8.0)
 	dock._filter_prompt_dismissed = true
 	return dock
+
+
+## Wait for completion steps started without await: the stub's scan takes one frame
+func _editor_steps_done() -> void:
+	await tree.process_frame
+	await tree.process_frame
 
 
 func test_import_settings_are_pinned_after_the_scan() -> void:
@@ -26,12 +36,13 @@ func test_import_settings_are_pinned_after_the_scan() -> void:
 	stub.pinned = PackedStringArray(["a.png", "b.png", "c.png"])
 	var dock := _dock(stub)
 	await dock._on_generation_completed(MANIFEST)
-	check_eq(str(stub.calls), str(["scan_and_wait", "pin_import_params"]), "scan, then pin")
+	check_eq(str(stub.calls), str(["scan_and_wait", "pin_import_params", "write_spriteframes"]), "scan, pin, then SpriteFrames")
 	check_eq(stub.pin_requested, PackedStringArray([
 		ROOT + "/characters/hero.png",
 		ROOT + "/characters/hero/frame_0_0.png",
 		ROOT + "/characters/hero/frame_0_1.png",
 	]), "sheet and frames under the output root")
+	check_eq(stub.wait_requested, stub.pin_requested, "the scan waits for the import of the files it pins")
 	check_eq(dock.status_text.text, "Generation complete! Import settings pinned for 3 files", "status")
 	dock.free()
 
@@ -41,6 +52,7 @@ func test_status_unchanged_when_nothing_needed_pinning() -> void:
 	var dock := _dock(stub)
 	await dock._on_generation_completed(MANIFEST)
 	check_eq(dock.status_text.text, "Generation complete!", "status")
+	check_eq(dock.results_label.text, "Results: 1 success, 0 errors", "results")
 	dock.free()
 
 
@@ -49,21 +61,100 @@ func test_pinning_can_be_turned_off() -> void:
 	var dock := _dock(stub)
 	dock._pin_import_params = false
 	await dock._on_generation_completed(MANIFEST)
-	check_eq(str(stub.calls), str(["scan_and_wait"]), "scan only")
+	check_eq(str(stub.calls), str(["scan_and_wait", "write_spriteframes"]), "no pinning")
 	dock.free()
 
 
-func test_pin_setting_is_saved() -> void:
+func test_spriteframes_are_written_scanned_and_linked() -> void:
+	var stub := StubEditor.new()
+	stub.spriteframes = PackedStringArray([ROOT + "/characters/hero.tres", ROOT + "/monsters/slime.generated.tres"])
+	var dock := _dock(stub)
+	dock.spriteframes_fps_spin.set_value_no_signal(12.0)
+	dock._spriteframes_loop = false
+	dock._overwrite_spriteframes = true
+	await dock._on_generation_completed(MANIFEST)
+	check_eq(str(stub.calls), str(["scan_and_wait", "pin_import_params", "write_spriteframes", "scan"]), "scan again after writing")
+	check_eq(str(stub.spriteframes_args), str([ROOT, 12.0, false, true]), "output root, fps, loop, overwrite")
+	check_eq(dock.results_label.text, "Results: 1 success, 0 errors, 2 SpriteFrames written", "results")
+	check_eq(dock.status_text.text, "Generation complete! 1 SpriteFrames saved as .generated.tres because a .tres already existed", "status")
+	var links: Array[Node] = dock.spriteframes_links.get_children()
+	check_eq(links.size(), 2, "one link per file")
+	if links.size() == 2:
+		check_eq(links[0].text, "characters/hero.tres", "link text relative to the output root")
+		links[1].pressed.emit()
+		check_eq(stub.navigated, ROOT + "/monsters/slime.generated.tres", "a link selects its file in the FileSystem dock")
+	dock.free()
+
+
+func test_spriteframes_can_be_turned_off() -> void:
+	var stub := StubEditor.new()
+	stub.spriteframes = PackedStringArray([ROOT + "/characters/hero.tres"])
+	var dock := _dock(stub)
+	dock.write_spriteframes_check.set_pressed_no_signal(false)
+	await dock._on_generation_completed(MANIFEST)
+	check_eq(str(stub.calls), str(["scan_and_wait", "pin_import_params"]), "no SpriteFrames")
+	check_eq(dock.spriteframes_links.get_child_count(), 0, "no links")
+	dock.free()
+
+
+func test_a_failed_spriteframes_write_keeps_the_results() -> void:
+	var stub := StubEditor.new()
+	stub.pinned = PackedStringArray(["a.png"])
+	stub.fail_spriteframes = true
+	var dock := _dock(stub)
+	dock._filter_prompt_dismissed = false
+	await dock._on_generation_completed(MANIFEST)
+	check(dock.results_section.visible, "results shown")
+	check_eq(dock.results_label.text, "Results: 1 success, 0 errors", "results")
+	check_eq(dock.status_text.text, "Generation complete! Import settings pinned for 1 files", "status")
+	check(not stub.calls.has("scan"), "nothing to rescan")
+	check(dock.filter_row.visible, "the steps after it still ran")
+	for child in dock.get_children():
+		if child is ConfirmationDialog:
+			child.get_cancel_button().pressed.emit()
+	await tree.process_frame
+	dock._filter_prompt_dismissed = true
+	dock.free()
+
+
+func test_the_next_generation_clears_the_links() -> void:
+	var stub := StubEditor.new()
+	stub.spriteframes = PackedStringArray([ROOT + "/characters/hero.tres"])
+	var dock := _dock(stub)
+	await dock._on_generation_completed(MANIFEST)
+	check_eq(dock.spriteframes_links.get_child_count(), 1, "link after the first run")
+	stub.spriteframes = PackedStringArray()
+	await dock._on_generation_completed(MANIFEST)
+	check_eq(dock.spriteframes_links.get_child_count(), 0, "no stale link after the second run")
+	dock.free()
+
+
+func test_editor_settings_are_saved_and_loaded() -> void:
 	var stub := StubEditor.new()
 	var dock := _dock(stub)
 	dock._pin_import_params = false
+	dock._spriteframes_loop = false
+	dock._overwrite_spriteframes = true
+	dock.write_spriteframes_check.set_pressed_no_signal(false)
+	dock.spriteframes_fps_spin.set_value_no_signal(15.0)
 	dock._save_settings()
+
+	var config := ConfigFile.new()
+	config.load(SETTINGS_PATH)
+	check_eq(config.get_value("editor", "spriteframes_fps"), 15.0, "fps in the settings file")
 	var reloaded := DockScene.instantiate()
 	tree.root.add_child(reloaded)
-	check_eq(reloaded._pin_import_params, false, "loaded from the settings file")
-	dock._pin_import_params = true
-	dock._save_settings()
+	check_eq(reloaded._pin_import_params, false, "pin_import_params")
+	check_eq(reloaded._spriteframes_loop, false, "spriteframes_loop")
+	check_eq(reloaded._overwrite_spriteframes, true, "overwrite_spriteframes")
+	check_eq(reloaded.write_spriteframes_check.button_pressed, false, "write_spriteframes")
+	check_eq(reloaded.spriteframes_fps_spin.value, 15.0, "spriteframes_fps")
 	reloaded.free()
+
+	# Put the defaults back for the other tests
+	dock.free()
+	dock = _dock(stub)
+	dock._save_settings()
 	dock.free()
 
 
@@ -87,15 +178,9 @@ func test_a_new_generation_during_the_scan_stops_the_editor_steps() -> void:
 	dock._on_generation_completed(MANIFEST)
 	dock._is_generating = true
 	await _editor_steps_done()
-	check_eq(str(stub.calls), str(["scan_and_wait"]), "nothing pinned for the finished run")
+	check_eq(str(stub.calls), str(["scan_and_wait"]), "nothing pinned or written for the finished run")
 	dock._is_generating = false
 	dock.free()
-
-
-## Wait for completion steps started without await: the stub's scan takes one frame
-func _editor_steps_done() -> void:
-	await tree.process_frame
-	await tree.process_frame
 
 
 func test_outside_the_editor_no_editor_steps() -> void:

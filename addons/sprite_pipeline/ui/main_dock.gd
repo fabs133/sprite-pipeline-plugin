@@ -54,6 +54,8 @@ const ImportParams := preload("res://addons/sprite_pipeline/import_params.gd")
 @onready var style_edit: TextEdit = $GenerateSection/StyleEdit
 @onready var generate_button: Button = $GenerateSection/GenerateButtons/GenerateButton
 @onready var cancel_button: Button = $GenerateSection/GenerateButtons/CancelButton
+@onready var write_spriteframes_check: CheckButton = $GenerateSection/SpriteFramesRow/WriteSpriteFramesCheck
+@onready var spriteframes_fps_spin: SpinBox = $GenerateSection/SpriteFramesRow/SpriteFramesFpsSpin
 
 @onready var progress_bar: ProgressBar = $StatusSection/ProgressBar
 @onready var status_text: Label = $StatusSection/StatusText
@@ -67,6 +69,7 @@ const ImportParams := preload("res://addons/sprite_pipeline/import_params.gd")
 @onready var filter_row: HBoxContainer = $StatusSection/ResultsSection/FilterRow
 @onready var filter_label: Label = $StatusSection/ResultsSection/FilterRow/FilterLabel
 @onready var filter_button: Button = $StatusSection/ResultsSection/FilterRow/FilterButton
+@onready var spriteframes_links: VBoxContainer = $StatusSection/ResultsSection/SpriteFramesLinks
 @onready var export_report_button: Button = $StatusSection/ErrorSection/ErrorButtons/ExportReportButton
 
 # Cache UI nodes
@@ -103,6 +106,10 @@ var _filter_dialog_open := false
 var _pin_import_params := true
 # Output directory of the running or last generation
 var _last_output_root := ""
+# [editor] spriteframes_loop and overwrite_spriteframes, set in the settings file only;
+# write_spriteframes and spriteframes_fps live in the generate section's controls
+var _spriteframes_loop := true
+var _overwrite_spriteframes := false
 
 # Automation server instance (for test system)
 var _automation_server = null  # AutomationServer
@@ -151,6 +158,8 @@ func force_initialize() -> void:
 	style_edit = get_node_or_null("GenerateSection/StyleEdit")
 	generate_button = get_node_or_null("GenerateSection/GenerateButtons/GenerateButton")
 	cancel_button = get_node_or_null("GenerateSection/GenerateButtons/CancelButton")
+	write_spriteframes_check = get_node_or_null("GenerateSection/SpriteFramesRow/WriteSpriteFramesCheck")
+	spriteframes_fps_spin = get_node_or_null("GenerateSection/SpriteFramesRow/SpriteFramesFpsSpin")
 	progress_bar = get_node_or_null("StatusSection/ProgressBar")
 	status_text = get_node_or_null("StatusSection/StatusText")
 	error_section = get_node_or_null("StatusSection/ErrorSection")
@@ -163,6 +172,7 @@ func force_initialize() -> void:
 	filter_row = get_node_or_null("StatusSection/ResultsSection/FilterRow")
 	filter_label = get_node_or_null("StatusSection/ResultsSection/FilterRow/FilterLabel")
 	filter_button = get_node_or_null("StatusSection/ResultsSection/FilterRow/FilterButton")
+	spriteframes_links = get_node_or_null("StatusSection/ResultsSection/SpriteFramesLinks")
 	export_report_button = get_node_or_null("StatusSection/ErrorSection/ErrorButtons/ExportReportButton")
 	cache_section = get_node_or_null("CacheSection")
 	cache_toggle = get_node_or_null("CacheSection/CacheSectionHeader/CacheToggle")
@@ -627,6 +637,12 @@ func _setup_connections() -> void:
 	if filter_button:
 		filter_button.pressed.connect(_on_filter_button_pressed)
 
+	# SpriteFrames options
+	if write_spriteframes_check:
+		write_spriteframes_check.toggled.connect(_on_spriteframes_option_changed)
+	if spriteframes_fps_spin:
+		spriteframes_fps_spin.value_changed.connect(_on_spriteframes_option_changed)
+
 	# Export report (optional node)
 	if export_report_button:
 		export_report_button.pressed.connect(_on_export_report_pressed)
@@ -663,6 +679,12 @@ func _load_settings() -> void:
 			download_raw_check.set_pressed_no_signal(config.get_value("pool", "download_raw", false))
 		_filter_prompt_dismissed = config.get_value("editor", "filter_prompt_dismissed", false)
 		_pin_import_params = config.get_value("editor", "pin_import_params", true)
+		_spriteframes_loop = config.get_value("editor", "spriteframes_loop", true)
+		_overwrite_spriteframes = config.get_value("editor", "overwrite_spriteframes", false)
+		if write_spriteframes_check:
+			write_spriteframes_check.set_pressed_no_signal(config.get_value("editor", "write_spriteframes", true))
+		if spriteframes_fps_spin:
+			spriteframes_fps_spin.set_value_no_signal(config.get_value("editor", "spriteframes_fps", 8.0))
 
 		# Load pool tokens if available. The client is created here so that later
 		# saves write the tokens back instead of dropping them.
@@ -706,6 +728,12 @@ func _save_settings() -> void:
 
 	config.set_value("editor", "filter_prompt_dismissed", _filter_prompt_dismissed)
 	config.set_value("editor", "pin_import_params", _pin_import_params)
+	if write_spriteframes_check:
+		config.set_value("editor", "write_spriteframes", write_spriteframes_check.button_pressed)
+	if spriteframes_fps_spin:
+		config.set_value("editor", "spriteframes_fps", spriteframes_fps_spin.value)
+	config.set_value("editor", "spriteframes_loop", _spriteframes_loop)
+	config.set_value("editor", "overwrite_spriteframes", _overwrite_spriteframes)
 
 	# Save cache settings
 	if _sprite_cache:
@@ -1100,6 +1128,7 @@ func _on_generation_completed(manifest: Dictionary) -> void:
 	var safe_mode_count: int = manifest.get("safe_mode_count", 0)
 	var grid_warning_count := count_grid_warnings(manifest)
 
+	_clear_spriteframes_links()
 	results_section.visible = true
 	results_label.text = "Results: %d success, %d errors" % [success_count, error_count]
 
@@ -1143,13 +1172,53 @@ func _on_generation_completed(manifest: Dictionary) -> void:
 ## pressing Reimport, then pin their import settings
 func _import_generated_files(manifest: Dictionary) -> void:
 	var output_root := _last_output_root if not _last_output_root.is_empty() else output_path_edit.text
-	await _editor.scan_and_wait()
+	var png_paths := ImportParams.manifest_png_paths(manifest, output_root)
+	await _editor.scan_and_wait(png_paths)
 	if _is_generating:
 		return
 	if _pin_import_params:
-		var pinned = _editor.pin_import_params(ImportParams.manifest_png_paths(manifest, output_root))
+		var pinned = _editor.pin_import_params(png_paths)
 		if pinned is PackedStringArray and not pinned.is_empty():
 			status_text.text += " Import settings pinned for %d files" % pinned.size()
+	if write_spriteframes_check and write_spriteframes_check.button_pressed:
+		var written = _editor.write_spriteframes(manifest, output_root, spriteframes_fps_spin.value, _spriteframes_loop, _overwrite_spriteframes)
+		if written is PackedStringArray and not written.is_empty():
+			# Show the new .tres files in the FileSystem dock
+			_editor.scan()
+			_show_spriteframes_links(written, output_root)
+
+
+## Count the written SpriteFrames in the results and link each file to the FileSystem dock
+func _show_spriteframes_links(paths: PackedStringArray, output_root: String) -> void:
+	results_label.text += ", %d SpriteFrames written" % paths.size()
+	var generated := 0
+	for path in paths:
+		if path.ends_with(EditorIntegration.GENERATED_SUFFIX):
+			generated += 1
+		var relative := ManifestPaths.relative_to(output_root, path)
+		var link := LinkButton.new()
+		link.text = relative if not relative.is_empty() else path
+		link.tooltip_text = path
+		link.pressed.connect(_on_spriteframes_link_pressed.bind(path))
+		spriteframes_links.add_child(link)
+	if generated > 0:
+		status_text.text += " %d SpriteFrames saved as .generated.tres because a .tres already existed" % generated
+
+
+func _clear_spriteframes_links() -> void:
+	if not spriteframes_links:
+		return
+	for link in spriteframes_links.get_children():
+		spriteframes_links.remove_child(link)
+		link.queue_free()
+
+
+func _on_spriteframes_link_pressed(path: String) -> void:
+	_editor.navigate_to(path)
+
+
+func _on_spriteframes_option_changed(_value: Variant) -> void:
+	_save_settings()
 
 
 ## Show the project's default texture filter under the results, in the editor only

@@ -286,6 +286,27 @@ custom_minimum_size = Vector2(0, 60)
 text = "pixel art game sprite, PC hardware themed incremental game, clean silhouette, transparent background"
 wrap_mode = 1
 
+[node name="SpriteFramesRow" type="HBoxContainer" parent="GenerateSection"]
+layout_mode = 2
+
+[node name="WriteSpriteFramesCheck" type="CheckButton" parent="GenerateSection/SpriteFramesRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "After generating, save a SpriteFrames resource (<name>.tres) next to each animated sheet"
+button_pressed = true
+text = "Write SpriteFrames"
+
+[node name="FpsLabel" type="Label" parent="GenerateSection/SpriteFramesRow"]
+layout_mode = 2
+text = "FPS"
+
+[node name="SpriteFramesFpsSpin" type="SpinBox" parent="GenerateSection/SpriteFramesRow"]
+layout_mode = 2
+tooltip_text = "Animation speed of the written SpriteFrames"
+min_value = 1.0
+max_value = 60.0
+value = 8.0
+
 [node name="GenerateButtons" type="HBoxContainer" parent="GenerateSection"]
 layout_mode = 2
 
@@ -354,6 +375,9 @@ layout_mode = 2
 layout_mode = 2
 text = "Results: 0 success, 0 errors"
 theme_override_colors/font_color = Color(0.4, 1, 0.4, 1)
+
+[node name="SpriteFramesLinks" type="VBoxContainer" parent="StatusSection/ResultsSection"]
+layout_mode = 2
 
 [node name="OpenOutputButton" type="Button" parent="StatusSection/ResultsSection"]
 layout_mode = 2

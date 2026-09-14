@@ -91,6 +91,10 @@ func _save_default_settings() -> void:
 	config.set_value("pool", "download_raw", false)  # Also download unprocessed 1024x1024 sheets
 	config.set_value("editor", "filter_prompt_dismissed", false)  # Stop offering Nearest texture filtering after generation
 	config.set_value("editor", "pin_import_params", true)  # Import generated PNGs lossless, without mipmaps or 3D compression
+	config.set_value("editor", "write_spriteframes", true)  # Save a SpriteFrames .tres next to each animated sheet
+	config.set_value("editor", "spriteframes_fps", 8.0)
+	config.set_value("editor", "spriteframes_loop", true)
+	config.set_value("editor", "overwrite_spriteframes", false)  # false: an existing <name>.tres is kept and <name>.generated.tres written
 	config.save(_settings_path)
 
 
