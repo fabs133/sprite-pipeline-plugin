@@ -15,6 +15,8 @@ const FILTER_NEAREST_MIPMAP := 3
 const FILTER_DEFAULT := 1
 const SCAN_TIMEOUT_MSEC := 10000
 
+const ImportParams := preload("res://addons/sprite_pipeline/import_params.gd")
+
 
 static func is_editor() -> bool:
 	return Engine.is_editor_hint()
@@ -68,6 +70,28 @@ static func reimport(paths: PackedStringArray) -> void:
 	var filesystem := _filesystem()
 	if filesystem and not paths.is_empty():
 		filesystem.reimport_files(paths)
+
+
+## Pin SpriteImportParams.DESIRED in the .import file of each PNG, then reimport the files
+## whose settings changed (in the editor). A PNG without a .import file, which Godot has
+## not imported yet, is skipped with a warning. Returns the paths whose settings changed.
+static func pin_import_params(png_paths: PackedStringArray) -> PackedStringArray:
+	var changed := PackedStringArray()
+	for path in png_paths:
+		var import_path := path + ".import"
+		var config := ConfigFile.new()
+		if not FileAccess.file_exists(import_path) or config.load(import_path) != OK:
+			push_warning("[SpritePipeline] %s is not imported yet; its import settings were not pinned" % path)
+			continue
+		if not ImportParams.apply(config):
+			continue
+		var err := config.save(import_path)
+		if err != OK:
+			push_warning("[SpritePipeline] Could not save %s: %s" % [import_path, error_string(err)])
+			continue
+		changed.append(path)
+	reimport(changed)
+	return changed
 
 
 static func _filesystem() -> EditorFileSystem:

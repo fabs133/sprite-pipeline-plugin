@@ -90,6 +90,7 @@ func _save_default_settings() -> void:
 	config.set_value("pool", "token_expires_at", 0)
 	config.set_value("pool", "download_raw", false)  # Also download unprocessed 1024x1024 sheets
 	config.set_value("editor", "filter_prompt_dismissed", false)  # Stop offering Nearest texture filtering after generation
+	config.set_value("editor", "pin_import_params", true)  # Import generated PNGs lossless, without mipmaps or 3D compression
 	config.save(_settings_path)
 
 

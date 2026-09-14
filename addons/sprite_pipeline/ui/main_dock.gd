@@ -22,6 +22,7 @@ const SpriteCacheClass := preload("res://addons/sprite_pipeline/cache/sprite_cac
 # Editor calls (FileSystem scans, reimports, project settings) and consent dialogs
 const EditorIntegration := preload("res://addons/sprite_pipeline/editor_integration.gd")
 const ConsentGate := preload("res://addons/sprite_pipeline/remediation/consent_gate.gd")
+const ImportParams := preload("res://addons/sprite_pipeline/import_params.gd")
 
 # Node references (set in _ready)
 @onready var byok_button: Button = $ModeSection/ModeButtons/BYOKButton
@@ -98,6 +99,10 @@ var _consent_gate := ConsentGate.new()
 # [editor] filter_prompt_dismissed: "Don't ask again" on the Nearest filter offer
 var _filter_prompt_dismissed := false
 var _filter_dialog_open := false
+# [editor] pin_import_params: pin lossless, no-mipmap, no-3D-compression imports on generated PNGs
+var _pin_import_params := true
+# Output directory of the running or last generation
+var _last_output_root := ""
 
 # Automation server instance (for test system)
 var _automation_server = null  # AutomationServer
@@ -657,6 +662,7 @@ func _load_settings() -> void:
 		if download_raw_check:
 			download_raw_check.set_pressed_no_signal(config.get_value("pool", "download_raw", false))
 		_filter_prompt_dismissed = config.get_value("editor", "filter_prompt_dismissed", false)
+		_pin_import_params = config.get_value("editor", "pin_import_params", true)
 
 		# Load pool tokens if available. The client is created here so that later
 		# saves write the tokens back instead of dropping them.
@@ -699,6 +705,7 @@ func _save_settings() -> void:
 		config.set_value("pool", "token_expires_at", _pool_client._token_expires_at)
 
 	config.set_value("editor", "filter_prompt_dismissed", _filter_prompt_dismissed)
+	config.set_value("editor", "pin_import_params", _pin_import_params)
 
 	# Save cache settings
 	if _sprite_cache:
@@ -999,6 +1006,7 @@ func _on_generate_pressed() -> void:
 
 	var output_root := output_path_edit.text
 	var global_style := style_edit.text
+	_last_output_root = output_root
 
 	# Ensure output directory exists
 	DirAccess.make_dir_recursive_absolute(output_root)
@@ -1110,9 +1118,6 @@ func _on_generation_completed(manifest: Dictionary) -> void:
 	status_text.text = "Generation complete!"
 	progress_bar.visible = false
 
-	# Show the new files in the FileSystem dock without pressing Reimport
-	_editor.scan()
-
 	# Notify automation server
 	if _automation_server:
 		_automation_server.set_last_manifest(manifest)
@@ -1123,9 +1128,28 @@ func _on_generation_completed(manifest: Dictionary) -> void:
 			"safe_mode_count": safe_mode_count
 		})
 
+	if _editor.is_editor():
+		await _import_generated_files(manifest)
+		# Pressing Generate again while the files were imported starts a new run
+		if _is_generating:
+			return
+
 	_update_filter_row()
 	# Last, and not awaited, so the dialog never holds up the results
 	_offer_nearest_filter()
+
+
+## Editor steps after a generation: show the new files in the FileSystem dock without
+## pressing Reimport, then pin their import settings
+func _import_generated_files(manifest: Dictionary) -> void:
+	var output_root := _last_output_root if not _last_output_root.is_empty() else output_path_edit.text
+	await _editor.scan_and_wait()
+	if _is_generating:
+		return
+	if _pin_import_params:
+		var pinned = _editor.pin_import_params(ImportParams.manifest_png_paths(manifest, output_root))
+		if pinned is PackedStringArray and not pinned.is_empty():
+			status_text.text += " Import settings pinned for %d files" % pinned.size()
 
 
 ## Show the project's default texture filter under the results, in the editor only

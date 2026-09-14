@@ -102,12 +102,13 @@ func ask(action_id: String, parent_node: Node) -> Dictionary:
 	var dialog_id := dialog.get_instance_id()
 	# Captured by reference: lambdas copy local variables, but not the dictionaries they point to
 	var state := {"confirmed": false}
+	# Deferred, so the caller resumes after the button's signal and the dialog's own hide
+	# have finished: it may then free the dialog's parent or open the next dialog
 	dialog.confirmed.connect(func():
 		state["confirmed"] = true
 		_dialog_closed.emit(dialog_id)
-	)
-	dialog.canceled.connect(func(): _dialog_closed.emit(dialog_id))
-	dialog.tree_exiting.connect(func(): _dialog_closed.emit(dialog_id))
+	, CONNECT_DEFERRED)
+	dialog.canceled.connect(func(): _dialog_closed.emit(dialog_id), CONNECT_DEFERRED)
 	dialog.popup_centered()
 
 	# AcceptDialog hides itself before it emits confirmed, so waiting for the dialog to
@@ -116,15 +117,15 @@ func ask(action_id: String, parent_node: Node) -> Dictionary:
 	while closed_id != dialog_id:
 		closed_id = await _dialog_closed
 
-	var checkbox := dialog.find_child(DONT_ASK_AGAIN_NODE, true, false) as CheckBox
-	answer["dont_ask_again"] = checkbox != null and checkbox.button_pressed
+	if is_instance_valid(dialog):
+		var checkbox := dialog.find_child(DONT_ASK_AGAIN_NODE, true, false) as CheckBox
+		answer["dont_ask_again"] = checkbox != null and checkbox.button_pressed
+		dialog.queue_free()
 	if state["confirmed"]:
 		answer["token"] = _generate_token(action_id)
 		consent_granted.emit(action_id, answer["token"])
 	else:
 		consent_denied.emit(action_id)
-	if not dialog.is_queued_for_deletion():
-		dialog.queue_free()
 	return answer
 
 

@@ -4,32 +4,9 @@ extends "res://tests/test_case.gd"
 const DockScene := preload("res://addons/sprite_pipeline/ui/main_dock.tscn")
 const MainDock := preload("res://addons/sprite_pipeline/ui/main_dock.gd")
 const ConsentGate := preload("res://addons/sprite_pipeline/remediation/consent_gate.gd")
+const StubEditor := preload("res://tests/stub_editor.gd")
 const SETTINGS_PATH := "user://sprite_pipeline_settings.cfg"
 const MANIFEST := {"version": 2, "results": [], "errors": []}
-
-
-## Records the dock's editor calls; the project filter starts at Linear
-class StubEditor extends RefCounted:
-	var editor := true
-	var filter := 1
-	var calls: Array[String] = []
-
-	func is_editor() -> bool:
-		return editor
-
-	func project_filter() -> int:
-		return filter
-
-	func project_filter_is_nearest() -> bool:
-		return filter == 0 or filter == 3
-
-	func set_project_filter_nearest() -> Error:
-		calls.append("set_project_filter_nearest")
-		filter = 0
-		return OK
-
-	func scan() -> void:
-		calls.append("scan")
 
 
 func _dock(stub: StubEditor) -> Node:
@@ -48,6 +25,12 @@ func _dialog(dock: Node) -> ConfirmationDialog:
 	return null
 
 
+## Press a dialog button and wait for the dock to handle the answer, which arrives deferred
+func _press(button: Button) -> void:
+	button.pressed.emit()
+	await tree.process_frame
+
+
 func test_completion_offers_nearest_and_applies_it() -> void:
 	var stub := StubEditor.new()
 	var dock := _dock(stub)
@@ -57,7 +40,7 @@ func test_completion_offers_nearest_and_applies_it() -> void:
 	var dialog := _dialog(dock)
 	check(dialog != null and dialog.visible, "dialog shown")
 	if dialog:
-		dialog.get_ok_button().pressed.emit()
+		await _press(dialog.get_ok_button())
 	check(stub.calls.has("set_project_filter_nearest"), "setting applied")
 	check_eq(dock.status_text.text, "Project texture filter set to Nearest", "status")
 	check_eq(dock.filter_label.text, "Pixel-art filtering: Nearest ✓", "label after")
@@ -72,12 +55,14 @@ func test_not_now_leaves_the_project_alone() -> void:
 	var dialog := _dialog(dock)
 	check(dialog != null, "dialog shown")
 	if dialog:
-		dialog.get_cancel_button().pressed.emit()
+		await _press(dialog.get_cancel_button())
 	check(not stub.calls.has("set_project_filter_nearest"), "setting untouched")
 	check(not dock._filter_prompt_dismissed, "asks again next time")
-	await tree.process_frame
 	await dock._on_generation_completed(MANIFEST)
-	check(_dialog(dock) != null, "offered again after the next generation")
+	dialog = _dialog(dock)
+	check(dialog != null, "offered again after the next generation")
+	if dialog:
+		await _press(dialog.get_cancel_button())
 	dock.free()
 
 
@@ -89,13 +74,12 @@ func test_dont_ask_again_is_saved_and_the_button_still_asks() -> void:
 	check(dialog != null, "dialog shown")
 	if dialog:
 		(dialog.find_child(ConsentGate.DONT_ASK_AGAIN_NODE, true, false) as CheckBox).button_pressed = true
-		dialog.get_cancel_button().pressed.emit()
+		await _press(dialog.get_cancel_button())
 	check(dock._filter_prompt_dismissed, "dismissed")
 	var config := ConfigFile.new()
 	config.load(SETTINGS_PATH)
 	check_eq(config.get_value("editor", "filter_prompt_dismissed", false), true, "saved to the settings file")
 
-	await tree.process_frame
 	await dock._on_generation_completed(MANIFEST)
 	check(_dialog(dock) == null, "not offered after the next generation")
 	check(dock.filter_button.visible, "button still there")
@@ -103,7 +87,7 @@ func test_dont_ask_again_is_saved_and_the_button_still_asks() -> void:
 	dialog = _dialog(dock)
 	check(dialog != null, "button opens the dialog anyway")
 	if dialog:
-		dialog.get_cancel_button().pressed.emit()
+		await _press(dialog.get_cancel_button())
 
 	dock._filter_prompt_dismissed = false
 	dock._save_settings()
