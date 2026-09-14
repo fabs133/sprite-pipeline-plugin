@@ -10,8 +10,7 @@ extends VBoxContainer
 const SETTINGS_PATH := "user://sprite_pipeline_settings.cfg"
 # Hosts of the retired hosted Pool service; saved settings pointing at them are cleared on load
 const RETIRED_POOL_HOSTS := ["sprites.pi-agents.dev"]
-const PLUGIN_VERSION := "0.1.0"
-const PROTOCOL_VERSION := "1"
+const Version := preload("res://addons/sprite_pipeline/version.gd")
 
 # Automation server for test system integration
 const AutomationServer := preload("res://addons/sprite_pipeline/api/automation_server.gd")
@@ -148,6 +147,7 @@ func force_initialize() -> void:
 	_setup_connections()
 	_update_ui_for_mode()
 	_update_cache_ui()
+	_update_version_label()
 
 	_initialized = true
 	print_debug("[SpritePipeline] Dock force initialized")
@@ -214,6 +214,7 @@ func _ready() -> void:
 	_setup_connections()
 	_update_ui_for_mode()
 	_update_cache_ui()
+	_update_version_label()
 
 	_initialized = true
 
@@ -231,6 +232,13 @@ func _ready() -> void:
 
 	# Process any commands that arrived before _ready
 	_process_pending_commands()
+
+
+## Show the plugin version in the dock header
+func _update_version_label() -> void:
+	var version_label := get_node_or_null("Header/VersionLabel") as Label
+	if version_label:
+		version_label.text = "v%s" % Version.PLUGIN
 
 
 ## Initialize the sprite cache
@@ -370,8 +378,8 @@ func _handle_auto_run_doctor(_args: Dictionary, request_id: String) -> void:
 			"pool_authenticated": _pool_client != null and _pool_client.is_authenticated() if _pool_client else false,
 		},
 		"versions": {
-			"plugin": PLUGIN_VERSION,
-			"protocol": PROTOCOL_VERSION,
+			"plugin": Version.PLUGIN,
+			"protocol": Version.PROTOCOL,
 			"godot": "%d.%d.%d" % [
 				Engine.get_version_info()["major"],
 				Engine.get_version_info()["minor"],
@@ -1072,8 +1080,8 @@ func _format_error_summary(error: Dictionary) -> String:
 		"Idempotency Key: %s" % error.get("idempotency_key", "N/A"),
 		"Inputs Hash: %s" % error.get("inputs_hash", "N/A"),
 		"",
-		"Plugin Version: %s" % PLUGIN_VERSION,
-		"Protocol Version: %s" % PROTOCOL_VERSION,
+		"Plugin Version: %s" % Version.PLUGIN,
+		"Protocol Version: %s" % Version.PROTOCOL,
 		"Mode: %s" % _current_mode,
 		"",
 		"Retryable: %s" % ("Yes" if error.get("retryable", false) else "No"),
@@ -1156,8 +1164,8 @@ func _create_diagnostic_bundle() -> Dictionary:
 		"generated_at": Time.get_datetime_string_from_system(),
 
 		"environment": {
-			"plugin_version": PLUGIN_VERSION,
-			"protocol_version": PROTOCOL_VERSION,
+			"plugin_version": Version.PLUGIN,
+			"protocol_version": Version.PROTOCOL,
 			"godot_version": "%d.%d.%d" % [
 				Engine.get_version_info()["major"],
 				Engine.get_version_info()["minor"],

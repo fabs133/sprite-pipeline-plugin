@@ -1,0 +1,8 @@
+; Development project for the plugin's headless tests (scripts/test.ps1, scripts/test.sh).
+; Not part of a release: the zip and the Asset Library ship addons/sprite_pipeline only.
+
+config_version=5
+
+[application]
+
+config/name="Sprite Pipeline Plugin Dev"

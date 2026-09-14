@@ -16,8 +16,7 @@ signal generation_completed(manifest: Dictionary)
 signal generation_failed(error: Dictionary)
 signal cache_hit(inputs_hash: String)
 
-const PLUGIN_VERSION := "1.0.0"
-const PROTOCOL_VERSION := "1"
+const Version := preload("res://addons/sprite_pipeline/version.gd")
 
 # Preload cache class
 const SpriteCacheClass = preload("res://addons/sprite_pipeline/cache/sprite_cache.gd")
@@ -180,8 +179,8 @@ func _generate_idempotency_key(inputs_hash: String) -> String:
 func _build_headers() -> PackedStringArray:
 	var headers := PackedStringArray([
 		"Content-Type: application/json",
-		"X-Plugin-Version: %s" % PLUGIN_VERSION,
-		"X-Protocol-Version: %s" % PROTOCOL_VERSION,
+		"X-Plugin-Version: %s" % Version.PLUGIN,
+		"X-Protocol-Version: %s" % Version.PROTOCOL,
 	])
 
 	if _current_job_id:
@@ -296,8 +295,8 @@ func _handle_error_response(status_code: int, body_text: String, headers: Dictio
 		"request_id": headers.get("x-request-id", ""),
 		"client_job_id": _current_job_id,
 		"inputs_hash": "",
-		"protocol_version": PROTOCOL_VERSION,
-		"plugin_version": PLUGIN_VERSION
+		"protocol_version": Version.PROTOCOL,
+		"plugin_version": Version.PLUGIN
 	}
 
 	# Parse JSON body

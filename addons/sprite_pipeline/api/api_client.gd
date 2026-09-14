@@ -12,9 +12,7 @@ signal progress_updated(stage: String, percent: int)
 
 const OPENAI_API_BASE := "https://api.openai.com/v1"
 
-# Protocol constants
-const PROTOCOL_VERSION := "1"
-const PLUGIN_VERSION := "0.1.0"
+const Version := preload("res://addons/sprite_pipeline/version.gd")
 
 # Timeout settings
 const DEFAULT_TIMEOUT := 120.0  # 2 minutes for image generation
@@ -99,8 +97,8 @@ func generate_idempotency_key(queue_hash: String, style: String) -> String:
 func _build_headers(include_auth: bool = true) -> PackedStringArray:
 	var headers := PackedStringArray([
 		"Content-Type: application/json",
-		"X-Plugin-Version: %s" % PLUGIN_VERSION,
-		"X-Protocol-Version: %s" % PROTOCOL_VERSION,
+		"X-Plugin-Version: %s" % Version.PLUGIN,
+		"X-Protocol-Version: %s" % Version.PROTOCOL,
 	])
 
 	if _current_job_id:
@@ -130,8 +128,8 @@ func _parse_error(status_code: int, body: String, headers: Dictionary) -> Dictio
 		"request_id": headers.get("x-request-id", ""),
 		"client_job_id": _current_job_id,
 		"idempotency_key": _current_idempotency_key,
-		"protocol_version": PROTOCOL_VERSION,
-		"plugin_version": PLUGIN_VERSION,
+		"protocol_version": Version.PROTOCOL,
+		"plugin_version": Version.PLUGIN,
 		"details": {}
 	}
 
@@ -198,8 +196,8 @@ func format_error_summary(error: Dictionary) -> String:
 		"Client Job ID: %s" % error.get("client_job_id", "N/A"),
 		"Idempotency Key: %s" % error.get("idempotency_key", "N/A"),
 		"",
-		"Plugin Version: %s" % error.get("plugin_version", PLUGIN_VERSION),
-		"Protocol Version: %s" % error.get("protocol_version", PROTOCOL_VERSION),
+		"Plugin Version: %s" % error.get("plugin_version", Version.PLUGIN),
+		"Protocol Version: %s" % error.get("protocol_version", Version.PROTOCOL),
 		"Mode: %s" % _mode,
 		"",
 		"Retryable: %s" % ("Yes" if error.get("retryable", false) else "No"),

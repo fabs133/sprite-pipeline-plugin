@@ -7,8 +7,7 @@ extends EditorPlugin
 ##   - BYOK (Bring Your Own Key): Direct OpenAI API calls
 ##   - Pool: Shared credits via backend server
 
-const PLUGIN_VERSION := "0.1.0"
-const PROTOCOL_VERSION := "1"
+const Version := preload("res://addons/sprite_pipeline/version.gd")
 
 # Automation server for test system integration - owned by plugin for reliable lifecycle
 const AutomationServerScript := preload("res://addons/sprite_pipeline/api/automation_server.gd")
@@ -47,7 +46,7 @@ func _enter_tree() -> void:
 		_automation_server.command_received.connect(dock._on_automation_command)
 		print_debug("[SpritePipeline] Signal connected to dock._on_automation_command")
 
-	print_debug("[SpritePipeline] Plugin loaded v%s (protocol %s)" % [PLUGIN_VERSION, PROTOCOL_VERSION])
+	print_debug("[SpritePipeline] Plugin loaded v%s (protocol %s)" % [Version.PLUGIN, Version.PROTOCOL])
 
 
 func _exit_tree() -> void:
@@ -97,12 +96,12 @@ func get_settings_path() -> String:
 
 ## Get plugin version
 func get_plugin_version() -> String:
-	return PLUGIN_VERSION
+	return Version.PLUGIN
 
 
 ## Get protocol version
 func get_protocol_version() -> String:
-	return PROTOCOL_VERSION
+	return Version.PROTOCOL
 
 
 ## Try to enable automation server (dev/test mode only)

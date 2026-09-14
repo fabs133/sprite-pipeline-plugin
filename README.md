@@ -52,11 +52,14 @@ sprite-pipeline-plugin/
 │   ├── cache/                 Local LRU sprite cache
 │   ├── remediation/           Self-healing actions for common errors
 │   ├── plugin.gd              EditorPlugin entry point
+│   ├── version.gd             Plugin and protocol versions
 │   ├── plugin.cfg             Godot plugin manifest
 │   ├── README.md              Addon-internal documentation
 │   ├── CHANGELOG.md           Release history
 │   └── LICENSE                MIT license
-├── scripts/                   Build and validation scripts (PowerShell + Bash)
+├── scripts/                   Build, validation and test scripts (PowerShell + Bash)
+├── tests/                     Headless GDScript tests
+├── project.godot              Dev project that runs the tests
 ├── .github/workflows/         CI for validate / build-dev / build-prod
 └── asset.cfg                  Godot Asset Library metadata
 ```
@@ -92,9 +95,19 @@ Validation:
 .\scripts\validate.ps1 -Strict
 ```
 
-To release a new version, update the version in `addons/sprite_pipeline/plugin.cfg`,
-`PLUGIN_VERSION` in `addons/sprite_pipeline/api/pool_client.gd` (the validation script
-fails if these two differ), `asset.cfg` and the CHANGELOG. Pushing a `vX.Y.Z` tag runs
+Tests (Godot 4.5+; set `GODOT` to the executable if `godot` is not on PATH):
+
+```bash
+# Linux / macOS
+./scripts/test.sh
+
+# Windows
+.\scripts\test.ps1
+```
+
+To release a new version, update `PLUGIN` in `addons/sprite_pipeline/version.gd`, the
+version in `addons/sprite_pipeline/plugin.cfg` and `asset.cfg` (the validation script
+fails if they differ), and the CHANGELOG. Pushing a `vX.Y.Z` tag runs
 the Build Production Release workflow, which builds the zip and publishes a GitHub
 release with `SHA256SUMS`.
 

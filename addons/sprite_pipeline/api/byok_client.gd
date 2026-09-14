@@ -13,9 +13,6 @@ signal generation_failed(error: Dictionary)
 const OPENAI_CHAT_URL := "https://api.openai.com/v1/chat/completions"
 const OPENAI_IMAGE_URL := "https://api.openai.com/v1/images/generations"
 
-const PLUGIN_VERSION := "0.1.0"
-const PROTOCOL_VERSION := "1"
-
 var _api_key: String = ""
 var _model: String = "gpt-4o"
 var _image_model: String = "dall-e-3"

@@ -54,25 +54,32 @@ function Test-NoDebugPrints {
 function Test-VersionConsistency {
     Write-Host "Checking version consistency..." -ForegroundColor Gray
 
-    # Extract version from plugin.cfg
-    $pluginCfg = Get-Content "addons/sprite_pipeline/plugin.cfg" -Raw
-    if ($pluginCfg -match 'version="([^"]+)"') {
-        $pluginVersion = $Matches[1]
-        Write-Host "   plugin.cfg version: $pluginVersion" -ForegroundColor Gray
+    # version.gd is the source of truth; plugin.cfg and asset.cfg must carry the same version
+    $versionGd = Get-Content "addons/sprite_pipeline/version.gd" -Raw
+    if ($versionGd -match 'const PLUGIN := "([^"]+)"') {
+        $codeVersion = $Matches[1]
+        Write-Host "   version.gd PLUGIN: $codeVersion" -ForegroundColor Gray
     } else {
-        Write-Host "❌ Could not extract version from plugin.cfg" -ForegroundColor Red
+        Write-Host "❌ Could not extract PLUGIN from version.gd" -ForegroundColor Red
         $script:issuesFound++
         return
     }
 
-    # Check pool_client.gd
-    $poolClient = Get-Content "addons/sprite_pipeline/api/pool_client.gd" -Raw
-    if ($poolClient -match 'const PLUGIN_VERSION := "([^"]+)"') {
-        $codeVersion = $Matches[1]
-        if ($codeVersion -eq $pluginVersion) {
-            Write-Host "✅ Version consistent across files ($pluginVersion)" -ForegroundColor Green
+    $sources = @(
+        @{ Path = "addons/sprite_pipeline/plugin.cfg"; Pattern = 'version="([^"]+)"' },
+        @{ Path = "asset.cfg"; Pattern = 'version = "([^"]+)"' }
+    )
+    foreach ($source in $sources) {
+        $content = Get-Content $source.Path -Raw
+        if ($content -match $source.Pattern) {
+            if ($Matches[1] -eq $codeVersion) {
+                Write-Host "✅ $($source.Path) matches version.gd ($codeVersion)" -ForegroundColor Green
+            } else {
+                Write-Host "❌ Version mismatch: $($source.Path)=$($Matches[1]), version.gd=$codeVersion" -ForegroundColor Red
+                $script:issuesFound++
+            }
         } else {
-            Write-Host "❌ Version mismatch: plugin.cfg=$pluginVersion, code=$codeVersion" -ForegroundColor Red
+            Write-Host "❌ Could not extract version from $($source.Path)" -ForegroundColor Red
             $script:issuesFound++
         }
     }

@@ -8,6 +8,8 @@ extends RefCounted
 signal command_received(command: String, args: Dictionary, request_id: String)
 signal event_emitted(event: Dictionary)
 
+const Version := preload("res://addons/sprite_pipeline/version.gd")
+
 const DEFAULT_PORT := 19876
 const MAX_MESSAGE_SIZE := 1024 * 1024  # 1MB
 
@@ -327,8 +329,8 @@ func _cmd_ping(_args: Dictionary) -> Dictionary:
 		"status": "ok",
 		"message": "pong",
 		"timestamp": Time.get_unix_time_from_system(),
-		"plugin_version": "0.1.0",
-		"protocol_version": "1"
+		"plugin_version": Version.PLUGIN,
+		"protocol_version": Version.PROTOCOL
 	}
 
 
