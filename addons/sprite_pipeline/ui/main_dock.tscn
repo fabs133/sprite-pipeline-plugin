@@ -119,6 +119,11 @@ horizontal_alignment = 1
 layout_mode = 2
 text = "Open verification page"
 
+[node name="DownloadRawCheck" type="CheckBox" parent="AuthSection/PoolAuth"]
+layout_mode = 2
+tooltip_text = "Also download each sprite's unprocessed 1024x1024 sheet (<name>_raw.png)"
+text = "Download raw sheets"
+
 [node name="HSeparator3" type="HSeparator" parent="."]
 layout_mode = 2
 

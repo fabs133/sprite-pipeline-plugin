@@ -11,6 +11,7 @@ const SETTINGS_PATH := "user://sprite_pipeline_settings.cfg"
 # Hosts of the retired hosted Pool service; saved settings pointing at them are cleared on load
 const RETIRED_POOL_HOSTS := ["sprites.pi-agents.dev"]
 const Version := preload("res://addons/sprite_pipeline/version.gd")
+const ManifestPaths := preload("res://addons/sprite_pipeline/manifest_paths.gd")
 
 # Automation server for test system integration
 const AutomationServer := preload("res://addons/sprite_pipeline/api/automation_server.gd")
@@ -32,6 +33,7 @@ const SpriteCacheClass := preload("res://addons/sprite_pipeline/cache/sprite_cac
 @onready var device_code_container: VBoxContainer = $AuthSection/PoolAuth/DeviceCodeContainer
 @onready var device_code_label: Label = $AuthSection/PoolAuth/DeviceCodeContainer/DeviceCode
 @onready var verify_link: LinkButton = $AuthSection/PoolAuth/DeviceCodeContainer/VerifyLink
+@onready var download_raw_check: CheckBox = $AuthSection/PoolAuth/DownloadRawCheck
 
 @onready var quota_section: VBoxContainer = $QuotaSection
 @onready var units_label: Label = $QuotaSection/QuotaInfo/UnitsLabel
@@ -111,6 +113,7 @@ func force_initialize() -> void:
 	device_code_container = get_node_or_null("AuthSection/PoolAuth/DeviceCodeContainer")
 	device_code_label = get_node_or_null("AuthSection/PoolAuth/DeviceCodeContainer/DeviceCode")
 	verify_link = get_node_or_null("AuthSection/PoolAuth/DeviceCodeContainer/VerifyLink")
+	download_raw_check = get_node_or_null("AuthSection/PoolAuth/DownloadRawCheck")
 	quota_section = get_node_or_null("QuotaSection")
 	units_label = get_node_or_null("QuotaSection/QuotaInfo/UnitsLabel")
 	reset_label = get_node_or_null("QuotaSection/QuotaInfo/ResetLabel")
@@ -578,6 +581,8 @@ func _setup_connections() -> void:
 	# Pool auth
 	login_button.pressed.connect(_on_login_pressed)
 	refresh_quota_button.pressed.connect(_on_refresh_quota_pressed)
+	if download_raw_check:
+		download_raw_check.toggled.connect(_on_download_raw_toggled)
 
 	# Generate
 	generate_button.pressed.connect(_on_generate_pressed)
@@ -618,6 +623,8 @@ func _load_settings() -> void:
 			push_warning("[SpritePipeline] Saved Pool server %s is retired; clearing it and its tokens. Enter your own backend URL." % server_url)
 			server_url = ""
 		server_edit.text = server_url
+		if download_raw_check:
+			download_raw_check.set_pressed_no_signal(config.get_value("pool", "download_raw", false))
 
 		# Load pool tokens if available. The client is created here so that later
 		# saves write the tokens back instead of dropping them.
@@ -649,6 +656,8 @@ func _save_settings() -> void:
 	config.set_value("general", "global_style", style_edit.text)
 	config.set_value("byok", "api_key", api_key_edit.text)
 	config.set_value("pool", "server_url", server_edit.text)
+	if download_raw_check:
+		config.set_value("pool", "download_raw", download_raw_check.button_pressed)
 
 	if _pool_client and _pool_client.is_authenticated():
 		config.set_value("pool", "access_token", _pool_client._access_token)
@@ -724,9 +733,12 @@ func _create_pool_client(server_url: String) -> void:
 	_pool_client.quota_updated.connect(_on_quota_updated)
 	_pool_client.generation_started.connect(_on_generation_started)
 	_pool_client.generation_progress.connect(_on_generation_progress)
+	_pool_client.generation_percent.connect(_on_generation_percent)
 	_pool_client.generation_completed.connect(_on_generation_completed)
 	_pool_client.generation_failed.connect(_on_generation_failed)
 	_pool_client.cache_hit.connect(_on_cache_hit)
+	if download_raw_check:
+		_pool_client.download_raw = download_raw_check.button_pressed
 	# Set sprite cache on pool client
 	if _sprite_cache:
 		_pool_client.set_sprite_cache(_sprite_cache)
@@ -734,6 +746,12 @@ func _create_pool_client(server_url: String) -> void:
 
 func _on_api_key_changed(_text: String) -> void:
 	_update_auth_status()
+	_save_settings()
+
+
+func _on_download_raw_toggled(pressed: bool) -> void:
+	if _pool_client:
+		_pool_client.download_raw = pressed
 	_save_settings()
 
 
@@ -954,6 +972,11 @@ func _on_generation_progress(stage: String, message: String) -> void:
 		_automation_server.emit_event("generation_progress", {"stage": stage, "message": message})
 
 
+func _on_generation_percent(percent: int, stage: String) -> void:
+	progress_bar.value = percent
+	status_text.text = "%s (%d%%)" % [stage, percent]
+
+
 func _on_generation_completed(manifest: Dictionary) -> void:
 	_is_generating = false
 	_last_manifest = manifest
@@ -962,6 +985,7 @@ func _on_generation_completed(manifest: Dictionary) -> void:
 	var success_count: int = manifest.get("results", []).size()
 	var error_count: int = manifest.get("errors", []).size()
 	var safe_mode_count: int = manifest.get("safe_mode_count", 0)
+	var grid_warning_count := count_grid_warnings(manifest)
 
 	results_section.visible = true
 	results_label.text = "Results: %d success, %d errors" % [success_count, error_count]
@@ -969,13 +993,23 @@ func _on_generation_completed(manifest: Dictionary) -> void:
 	if safe_mode_count > 0:
 		results_label.text += " (%d safe mode)" % safe_mode_count
 
-	if error_count > 0:
+	# Sprites that spilled across cell boundaries of the generated sheet
+	if grid_warning_count > 0:
+		results_label.text += " (%d grid warnings)" % grid_warning_count
+
+	if error_count > 0 or grid_warning_count > 0:
 		results_label.add_theme_color_override("font_color", Color(1, 0.8, 0.2))
 	else:
 		results_label.add_theme_color_override("font_color", Color(0.4, 1, 0.4))
 
 	status_text.text = "Generation complete!"
 	progress_bar.visible = false
+
+	# Show the new files in the FileSystem dock without pressing Reimport
+	if Engine.is_editor_hint():
+		var filesystem := EditorInterface.get_resource_filesystem()
+		if filesystem:
+			filesystem.scan()
 
 	# Notify automation server
 	if _automation_server:
@@ -986,6 +1020,15 @@ func _on_generation_completed(manifest: Dictionary) -> void:
 			"error_count": error_count,
 			"safe_mode_count": safe_mode_count
 		})
+
+
+## Number of results whose sheet failed the grid gutter check
+static func count_grid_warnings(manifest: Dictionary) -> int:
+	var count := 0
+	for result in manifest.get("results", []):
+		if result is Dictionary and result.get("grid_violation", false) == true:
+			count += 1
+	return count
 
 
 func _on_generation_failed(error: Dictionary) -> void:
@@ -1258,11 +1301,17 @@ func _import_assets_from_manifest(manifest: Dictionary, output_root: String) -> 
 		return results
 
 	for entry in manifest["results"]:
-		var file_path: String = entry.get("file_path", "")
+		var manifest_path: String = entry.get("file_path", "")
 		var expected_hash: String = entry.get("sha256", "")
-		var sprite_key: String = entry.get("sprite_key", "")
 
+		if manifest_path.is_empty():
+			continue
+
+		# Manifest paths are relative to output_root (absolute in older BYOK manifests)
+		var file_path := ManifestPaths.resolve(output_root, manifest_path)
 		if file_path.is_empty():
+			results["failed"] += 1
+			results["errors"].append({"path": manifest_path, "error": "unsafe_path"})
 			continue
 
 		# Check if file exists and matches hash

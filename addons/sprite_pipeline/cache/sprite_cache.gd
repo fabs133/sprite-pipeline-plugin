@@ -4,19 +4,28 @@ extends RefCounted
 ##
 ## Caches generated sprites to avoid redundant API calls. Uses inputs_hash
 ## (SHA256 of queue + style) as cache keys. Supports configurable max size
-## with LRU eviction policy.
+## with LRU eviction policy. Sprite files are stored under their paths relative
+## to output_root, so frames with the same file name in different sprites
+## don't overwrite each other.
 
 signal cache_updated(stats: Dictionary)
+
+const ManifestPaths := preload("res://addons/sprite_pipeline/manifest_paths.gd")
 
 const INDEX_FILE := "index.json"
 const DEFAULT_CACHE_DIR := "user://sprite_cache"
 const DEFAULT_MAX_SIZE_MB := 500.0
-const INDEX_VERSION := 1
+## 2: sprite files under <entry>/files/<relative path>. Version 1 stored them flat by
+## file name; a version mismatch starts the index fresh.
+const INDEX_VERSION := 2
+## Subdirectory of an entry directory that holds the sprite files
+const FILES_DIR := "files"
 
 ## Cache entry structure stored in index
 class CacheEntry:
 	var inputs_hash: String
 	var manifest_path: String
+	## Sprite file paths relative to output_root (and to the entry's files directory)
 	var sprite_paths: Array[String]
 	var total_size_bytes: int
 	var created_at: int
@@ -152,22 +161,22 @@ func get_from_cache(inputs_hash: String) -> Variant:
 	return json.get_data()
 
 
-## Add generation result to cache
+## Add generation result to cache.
+## sprite_files: Array of {abs: String, rel: String}, each file's current location
+## and its path relative to output_root.
 func add_to_cache(inputs_hash: String, manifest: Dictionary, sprite_files: Array) -> Error:
 	if not enabled or not _is_loaded:
 		return ERR_UNCONFIGURED
 
-	# Create entry directory
-	var entry_dir := cache_dir.path_join(inputs_hash.substr(0, 16))
-	var dir := DirAccess.open(cache_dir)
-	if not dir:
-		return ERR_CANT_CREATE
+	# Replace an existing entry instead of mixing its files with the new ones
+	if _index.has(inputs_hash):
+		_remove_entry(inputs_hash)
 
-	if not dir.dir_exists(inputs_hash.substr(0, 16)):
-		var err := dir.make_dir(inputs_hash.substr(0, 16))
-		if err != OK:
-			push_error("[SpriteCache] Failed to create entry directory: %s" % error_string(err))
-			return err
+	var entry_dir := _entry_dir(inputs_hash)
+	var dir_err := DirAccess.make_dir_recursive_absolute(entry_dir)
+	if dir_err != OK:
+		push_error("[SpriteCache] Failed to create entry directory: %s" % error_string(dir_err))
+		return dir_err
 
 	var entry := CacheEntry.new(inputs_hash)
 	var total_size: int = 0
@@ -185,32 +194,26 @@ func add_to_cache(inputs_hash: String, manifest: Dictionary, sprite_files: Array
 	total_size += manifest_json.length()
 	entry.manifest_path = manifest_path
 
-	# Copy sprite files to cache
-	for sprite_path in sprite_files:
-		if not FileAccess.file_exists(sprite_path):
+	# Copy sprite files to cache under their relative paths
+	var files_dir := entry_dir.path_join(FILES_DIR)
+	for sprite_file in sprite_files:
+		var source_path: String = sprite_file.get("abs", "")
+		var relative_path: String = sprite_file.get("rel", "")
+		if not ManifestPaths.is_safe_relative(relative_path) or not FileAccess.file_exists(source_path):
 			continue
 
-		var sprite_name: String = sprite_path.get_file()
-		var cached_sprite_path := entry_dir.path_join(sprite_name)
-
-		# Copy file
-		var source := FileAccess.open(sprite_path, FileAccess.READ)
-		if not source:
-			continue
-
+		var content := FileAccess.get_file_as_bytes(source_path)
+		var cached_sprite_path := files_dir.path_join(relative_path)
+		DirAccess.make_dir_recursive_absolute(cached_sprite_path.get_base_dir())
 		var dest := FileAccess.open(cached_sprite_path, FileAccess.WRITE)
 		if not dest:
-			source.close()
 			continue
 
-		var content := source.get_buffer(source.get_length())
 		dest.store_buffer(content)
+		dest.close()
 		total_size += content.size()
 
-		source.close()
-		dest.close()
-
-		entry.sprite_paths.append(cached_sprite_path)
+		entry.sprite_paths.append(relative_path)
 
 	entry.total_size_bytes = total_size
 
@@ -230,6 +233,30 @@ func add_to_cache(inputs_hash: String, manifest: Dictionary, sprite_files: Array
 	return OK
 
 
+## Files of a cached result as {abs, rel}: the cached copy and its path relative to
+## output_root. Empty if the hash is not cached.
+func get_cached_files(inputs_hash: String) -> Array:
+	var files := []
+	if not _index.has(inputs_hash):
+		return files
+
+	var entry: CacheEntry = _index[inputs_hash]
+	var files_dir := _entry_dir(inputs_hash).path_join(FILES_DIR)
+	for relative_path in entry.sprite_paths:
+		files.append({"abs": files_dir.path_join(relative_path), "rel": relative_path})
+	return files
+
+
+## Remove a cached result, e.g. when its files turn out to be missing
+func remove_entry(inputs_hash: String) -> void:
+	if not _index.has(inputs_hash):
+		return
+
+	_remove_entry(inputs_hash)
+	_save_index()
+	cache_updated.emit(get_stats())
+
+
 ## Remove entry from cache
 func _remove_entry(inputs_hash: String) -> void:
 	if not _index.has(inputs_hash):
@@ -237,20 +264,27 @@ func _remove_entry(inputs_hash: String) -> void:
 
 	var entry: CacheEntry = _index[inputs_hash]
 
-	# Delete files
-	if FileAccess.file_exists(entry.manifest_path):
-		DirAccess.remove_absolute(entry.manifest_path)
-
-	for sprite_path in entry.sprite_paths:
-		if FileAccess.file_exists(sprite_path):
-			DirAccess.remove_absolute(sprite_path)
-
-	# Try to remove entry directory
-	var entry_dir := cache_dir.path_join(inputs_hash.substr(0, 16))
-	DirAccess.remove_absolute(entry_dir)
+	# Delete the entry directory with the manifest and every sprite file below it
+	_delete_recursive(_entry_dir(inputs_hash))
 
 	_total_size_bytes -= entry.total_size_bytes
 	_index.erase(inputs_hash)
+
+
+func _entry_dir(inputs_hash: String) -> String:
+	return cache_dir.path_join(inputs_hash.substr(0, 16))
+
+
+## Delete a directory and everything below it
+static func _delete_recursive(path: String) -> void:
+	if not DirAccess.dir_exists_absolute(path):
+		return
+
+	for file_name in DirAccess.get_files_at(path):
+		DirAccess.remove_absolute(path.path_join(file_name))
+	for dir_name in DirAccess.get_directories_at(path):
+		_delete_recursive(path.path_join(dir_name))
+	DirAccess.remove_absolute(path)
 
 
 ## Evict LRU entries until under size limit

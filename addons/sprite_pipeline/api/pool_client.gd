@@ -5,6 +5,9 @@ extends RefCounted
 ## Uses shared credits via a backend server. Includes device authentication,
 ## quota management, and proper error handling. Integrates with SpriteCache
 ## to avoid redundant API calls.
+##
+## Speaks protocol 2.0.0 of sprite-pipeline-backend: submit a job, poll its status,
+## fetch the result, then download and verify every asset.
 
 signal auth_started(device_code: String, user_code: String, verification_uri: String)
 signal auth_completed(access_token: String)
@@ -12,11 +15,13 @@ signal auth_failed(error: Dictionary)
 signal quota_updated(quota: Dictionary)
 signal generation_started(job_id: String)
 signal generation_progress(stage: String, message: String)
+signal generation_percent(percent: int, stage: String)
 signal generation_completed(manifest: Dictionary)
 signal generation_failed(error: Dictionary)
 signal cache_hit(inputs_hash: String)
 
 const Version := preload("res://addons/sprite_pipeline/version.gd")
+const ManifestPaths := preload("res://addons/sprite_pipeline/manifest_paths.gd")
 
 # Preload cache class
 const SpriteCacheClass = preload("res://addons/sprite_pipeline/cache/sprite_cache.gd")
@@ -70,13 +75,6 @@ static func _is_local_host(host: String) -> bool:
 	var second := octets[1].to_int()
 	return first == 127 or first == 10 or (first == 192 and second == 168) or (first == 172 and second >= 16 and second <= 31)
 
-static func _is_safe_relative_path(path: String) -> bool:
-	"""Validate a server-supplied relative path so it cannot escape the directory it is joined to."""
-	if path.is_empty() or path.begins_with("/") or "\\" in path or ":" in path or ".." in path.split("/"):
-		push_error("Rejected unsafe path from server: %s" % path)
-		return false
-	return true
-
 static func _sanitize_job_id(job_id: String) -> String:
 	"""Sanitize job ID to only allow safe characters."""
 	var sanitized := ""
@@ -102,6 +100,9 @@ const DEVICE_STATUS_MESSAGES := {
 	"denied": "The login was denied.",
 }
 
+## Transient failures in a row (no response, or a 5xx answer) a job poll retries before giving up
+const MAX_POLL_RETRIES := 3
+
 var _server_url: String = ""
 var _access_token: String = ""
 var _refresh_token: String = ""
@@ -118,6 +119,11 @@ var _sprite_cache = null  # SpriteCache
 # Quota cache for reducing API calls
 var _quota_cache: Dictionary = {}
 var quota_cache_ttl: int = 300  # 5 minutes
+
+## Also download each sprite's unprocessed sheet (assets of kind "raw")
+var download_raw: bool = false
+## Seconds before the second job status poll; the interval backs off to 10 s
+var initial_poll_interval: float = 1.0
 
 
 func _init(server_url: String) -> void:
@@ -305,36 +311,27 @@ func _handle_error_response(status_code: int, body_text: String, headers: Dictio
 		"plugin_version": Version.PLUGIN
 	}
 
-	# Parse JSON body
-	var json := JSON.new()
-	if json.parse(body_text) == OK:
-		var data: Dictionary = json.get_data()
-		if data.has("error"):
-			var err: Dictionary = data["error"]
-			error["code"] = err.get("code", error["code"])
-			error["message"] = err.get("message", error["message"])
-			error["stage"] = err.get("stage", error["stage"])
-			error["retryable"] = err.get("retryable", error["retryable"])
-			error["retry_after_ms"] = err.get("retry_after_ms", 0)
-			error["inputs_hash"] = err.get("inputs_hash", "")
-			error["docs_key"] = err.get("docs_key", "")
+	var parsed := parse_error_body(body_text)
+	error.merge(parsed, true)
 
-	# Handle specific status codes
+	# Handle specific status codes; a message from the server wins over the fallback text
 	match status_code:
 		426:
 			error["code"] = "UPGRADE_REQUIRED"
-			error["message"] = "Plugin version too old. Please update."
 			error["retryable"] = false
+			if not parsed.has("message"):
+				error["message"] = "Plugin version too old. Please update."
 		429:
 			error["code"] = "RATE_LIMITED"
 			error["retryable"] = true
-			var retry_after := headers.get("retry-after", "60")
+			var retry_after: String = headers.get("retry-after", "60")
 			if retry_after.is_valid_int():
 				error["retry_after_ms"] = int(retry_after) * 1000
 		402:
 			error["code"] = "QUOTA_EXCEEDED"
-			error["message"] = "Quota exhausted. Add credits or wait for reset."
 			error["retryable"] = false
+			if not parsed.has("message"):
+				error["message"] = "Quota exhausted. Add credits or wait for reset."
 		403:
 			error["code"] = "FORBIDDEN"
 			error["retryable"] = false
@@ -346,6 +343,49 @@ func _handle_error_response(status_code: int, body_text: String, headers: Dictio
 		"success": false,
 		"error": error
 	}
+
+
+## Fields of an error response body. Reads the {"error": {...}} envelope of the plugin
+## protocol and FastAPI's {"detail": ...}, where the backend puts
+## {"error": "<code>", "message": "..."}. Returns only the fields found.
+static func parse_error_body(body_text: String) -> Dictionary:
+	var parsed := {}
+	var json := JSON.new()
+	if json.parse(body_text) != OK or not json.data is Dictionary:
+		return parsed
+	var data: Dictionary = json.data
+
+	var envelope = data.get("error")
+	if envelope is Dictionary:
+		for key in ["code", "message", "stage", "retryable", "retry_after_ms", "inputs_hash", "docs_key"]:
+			if envelope.has(key):
+				parsed[key] = envelope[key]
+		return parsed
+
+	var detail = data.get("detail")
+	if detail is Dictionary:
+		if detail.get("error") is String:
+			parsed["code"] = detail["error"]
+		if detail.get("message") is String:
+			parsed["message"] = detail["message"]
+		# A rejected queue lists each problem (422 invalid_mask)
+		var problems = detail.get("details")
+		if problems is Array and not problems.is_empty():
+			var lines := PackedStringArray()
+			for problem in problems:
+				lines.append(str(problem))
+			parsed["message"] = "%s: %s" % [parsed.get("message", "Invalid request"), "; ".join(lines)]
+	elif detail is String:
+		parsed["message"] = detail
+	elif detail is Array:
+		# FastAPI request validation: [{"loc": [...], "msg": "..."}]
+		var messages := PackedStringArray()
+		for item in detail:
+			if item is Dictionary and item.get("msg") is String:
+				messages.append(item["msg"])
+		if not messages.is_empty():
+			parsed["message"] = "; ".join(messages)
+	return parsed
 
 
 ## Cancel current operation
@@ -498,12 +538,13 @@ func generate_sprites(queue_data: Array, output_root: String, global_style: Stri
 		generation_progress.emit("cache_check", "Checking local cache...")
 		var cached_manifest = _sprite_cache.get_from_cache(inputs_hash)
 		if cached_manifest:
-			print_debug("[PoolClient] Cache HIT for %s" % inputs_hash.substr(0, 16))
-			cache_hit.emit(inputs_hash)
-			# Restore cached sprites to output directory
-			await _restore_cached_sprites(inputs_hash, cached_manifest, output_root)
-			generation_completed.emit(cached_manifest)
-			return
+			if _restore_cached_sprites(inputs_hash, cached_manifest, output_root):
+				print_debug("[PoolClient] Cache HIT for %s" % inputs_hash.substr(0, 16))
+				cache_hit.emit(inputs_hash)
+				generation_completed.emit(cached_manifest)
+				return
+			push_warning("[PoolClient] Cached files for %s are missing; generating again" % inputs_hash.substr(0, 16))
+			_sprite_cache.remove_entry(inputs_hash)
 
 	generation_started.emit(_current_job_id)
 
@@ -524,13 +565,13 @@ func generate_sprites(queue_data: Array, output_root: String, global_style: Stri
 
 	var data: Dictionary = result["data"]
 
-	# Check if synchronous response with manifest
+	# A server that answers synchronously sends the result right away
 	if data.has("manifest"):
 		await _handle_sync_response(data, output_root)
 		return
 
 	# Async job - poll for completion
-	var server_job_id: String = data.get("job_id", "")
+	var server_job_id: String = str(data.get("job_id", ""))
 	if server_job_id.is_empty():
 		generation_failed.emit({
 			"code": "NO_JOB_ID",
@@ -542,38 +583,62 @@ func generate_sprites(queue_data: Array, output_root: String, global_style: Stri
 	await _poll_job_status(server_job_id, output_root)
 
 
-## Handle synchronous response with manifest
+## Download a finished job's assets and verify them, then save the manifest and cache the result
 func _handle_sync_response(data: Dictionary, output_root: String) -> void:
-	var manifest: Dictionary = data["manifest"]
-	var downloaded_sprites: Array = []
+	var manifest: Dictionary = data["manifest"] if data.get("manifest") is Dictionary else {}
+	var assets: Array = data["assets"] if data.get("assets") is Array else []
+	var written: Array = []  # {abs, rel} of each file written under output_root
+	var download_errors: Array = []
 
-	# Download and save assets
-	if data.has("assets"):
-		generation_progress.emit("downloading", "Downloading assets...")
-		for asset in data["assets"]:
-			var asset_path: String = asset.get("path", "")
-			var asset_url: String = asset.get("url", "")
-			if asset_path and asset_url:
-				# Both values come from the server; never write outside output_root
-				if not _is_safe_relative_path(asset_path) or not _validate_url(asset_url):
-					continue
-				var full_path := output_root.path_join(asset_path)
-				DirAccess.make_dir_recursive_absolute(full_path.get_base_dir())
-				var success := await _download_file(asset_url, full_path)
-				if success:
-					downloaded_sprites.append(full_path)
+	if not assets.is_empty():
+		generation_progress.emit("downloading", "Downloading %d assets..." % assets.size())
 
-	# Save manifest
-	var manifest_path := output_root.path_join("run_manifest.json")
-	var file := FileAccess.open(manifest_path, FileAccess.WRITE)
-	if file:
-		file.store_string(JSON.stringify(manifest, "\t"))
+	for asset in assets:
+		if not asset is Dictionary:
+			continue
+		if asset.get("kind") == "raw" and not download_raw:
+			continue
+		var asset_path: String = asset["path"] if asset.get("path") is String else ""
+		var asset_url: String = asset["url"] if asset.get("url") is String else ""
+
+		# Both values come from the server; never write outside output_root
+		var full_path := ManifestPaths.resolve(output_root, asset_path) if ManifestPaths.is_safe_relative(asset_path) else ""
+		if full_path.is_empty() or not _validate_url(asset_url):
+			push_warning("[PoolClient] Skipping asset with an unsafe path or URL: %s" % asset_path)
+			download_errors.append({"path": asset_path, "reason": "unsafe_path_or_url"})
+			continue
+
+		var download: Dictionary = await _download_file(asset_url)
+		if not download.get("success", false):
+			download_errors.append({"path": asset_path, "reason": "download_failed"})
+			continue
+
+		var content: PackedByteArray = download["body"]
+		var expected_sha256: String = asset["sha256"] if asset.get("sha256") is String else ""
+		if not expected_sha256.is_empty() and sha256_hex(content) != expected_sha256.to_lower():
+			push_warning("[PoolClient] Skipping asset whose SHA-256 does not match: %s" % asset_path)
+			download_errors.append({"path": asset_path, "reason": "sha256_mismatch"})
+			continue
+
+		DirAccess.make_dir_recursive_absolute(full_path.get_base_dir())
+		var file := FileAccess.open(full_path, FileAccess.WRITE)
+		if not file:
+			download_errors.append({"path": asset_path, "reason": "write_failed"})
+			continue
+		file.store_buffer(content)
 		file.close()
+		written.append({"abs": full_path, "rel": asset_path})
 
-	# Store to cache if available
-	if _sprite_cache and _sprite_cache.enabled and _current_inputs_hash:
+	if not download_errors.is_empty():
+		generation_progress.emit("download_warnings", "%d assets skipped" % download_errors.size())
+		manifest["download_errors"] = download_errors
+
+	_save_manifest(manifest, output_root)
+
+	# Cache complete results only, so a cache hit never restores a partial download
+	if _sprite_cache and _sprite_cache.enabled and _current_inputs_hash and download_errors.is_empty():
 		generation_progress.emit("caching", "Saving to local cache...")
-		var cache_err: Error = _sprite_cache.add_to_cache(_current_inputs_hash, manifest, downloaded_sprites)
+		var cache_err: Error = _sprite_cache.add_to_cache(_current_inputs_hash, manifest, written)
 		if cache_err == OK:
 			print_debug("[PoolClient] Cached generation result: %s" % _current_inputs_hash.substr(0, 16))
 		else:
@@ -585,69 +650,66 @@ func _handle_sync_response(data: Dictionary, output_root: String) -> void:
 	generation_completed.emit(manifest)
 
 
-## Restore cached sprites to output directory
-func _restore_cached_sprites(inputs_hash: String, manifest: Dictionary, output_root: String) -> void:
+## Copy a cached result into output_root. Returns false, before copying anything,
+## if a cached file is missing.
+func _restore_cached_sprites(inputs_hash: String, manifest: Dictionary, output_root: String) -> bool:
 	generation_progress.emit("restoring", "Restoring cached sprites...")
 
-	# Get cached entry directory
-	var cache_dir: String = _sprite_cache.cache_dir if _sprite_cache else "user://sprite_cache"
-	var entry_dir := cache_dir.path_join(inputs_hash.substr(0, 16))
+	var cached_files: Array = _sprite_cache.get_cached_files(inputs_hash) if _sprite_cache else []
+	for cached in cached_files:
+		if ManifestPaths.resolve(output_root, cached["rel"]).is_empty() or not FileAccess.file_exists(cached["abs"]):
+			return false
 
-	# Copy sprites from cache to output
-	if manifest.has("results"):
-		for result in manifest["results"]:
-			var file_path: String = result.get("file_path", "")
-			if file_path.is_empty():
-				continue
+	for cached in cached_files:
+		var dest_path := ManifestPaths.resolve(output_root, cached["rel"])
+		DirAccess.make_dir_recursive_absolute(dest_path.get_base_dir())
+		var dest := FileAccess.open(dest_path, FileAccess.WRITE)
+		if not dest:
+			return false
+		dest.store_buffer(FileAccess.get_file_as_bytes(cached["abs"]))
+		dest.close()
 
-			# Determine cached file name
-			var sprite_name := file_path.get_file()
-			var cached_path := entry_dir.path_join(sprite_name)
+	_save_manifest(manifest, output_root)
+	return true
 
-			if FileAccess.file_exists(cached_path):
-				# Copy to output. file_path comes from a server manifest, so keep it inside output_root
-				var root_prefix := output_root.trim_suffix("/") + "/"
-				var relative_path := file_path.trim_prefix(root_prefix) if file_path.begins_with(root_prefix) else sprite_name
-				if not _is_safe_relative_path(relative_path):
-					continue
-				var dest_path := output_root.path_join(relative_path)
 
-				DirAccess.make_dir_recursive_absolute(dest_path.get_base_dir())
-
-				var source := FileAccess.open(cached_path, FileAccess.READ)
-				if source:
-					var dest := FileAccess.open(dest_path, FileAccess.WRITE)
-					if dest:
-						dest.store_buffer(source.get_buffer(source.get_length()))
-						dest.close()
-					source.close()
-
-	# Save manifest to output
-	var manifest_path := output_root.path_join("run_manifest.json")
-	var file := FileAccess.open(manifest_path, FileAccess.WRITE)
+## Write the manifest to output_root/run_manifest.json
+func _save_manifest(manifest: Dictionary, output_root: String) -> void:
+	DirAccess.make_dir_recursive_absolute(output_root)
+	var file := FileAccess.open(output_root.path_join("run_manifest.json"), FileAccess.WRITE)
 	if file:
 		file.store_string(JSON.stringify(manifest, "\t"))
 		file.close()
 
 
-## Poll job status until completion
+## Poll job status until the job finishes. A lost connection or a 5xx answer is
+## retried MAX_POLL_RETRIES times in a row at the current interval; any other
+## error ends the generation.
 func _poll_job_status(job_id: String, output_root: String) -> void:
-	var poll_interval := 1.0  # seconds
+	var poll_interval := initial_poll_interval
 	var max_interval := 10.0
 	var backoff := 1.5
+	var transient_failures := 0
+
+	generation_progress.emit("polling", "Waiting for job %s..." % job_id)
 
 	while not _is_cancelled:
-		generation_progress.emit("polling", "Waiting for job %s..." % job_id)
-
 		var endpoint := ENDPOINT_JOB_STATUS % job_id
 		var result := await _make_request(HTTPClient.METHOD_GET, endpoint)
 
 		if not result["success"]:
+			if is_transient_failure(result["error"]) and transient_failures < MAX_POLL_RETRIES:
+				transient_failures += 1
+				generation_progress.emit("polling", "Server not reachable, retry %d of %d..." % [transient_failures, MAX_POLL_RETRIES])
+				await Engine.get_main_loop().create_timer(poll_interval).timeout
+				continue
 			generation_failed.emit(result["error"])
 			return
+		transient_failures = 0
 
 		var data: Dictionary = result["data"]
-		var status: String = data.get("status", "unknown")
+		var status := str(data.get("status", "unknown"))
+		generation_percent.emit(_progress_percent(data), _progress_stage(data, status))
 
 		match status:
 			"completed":
@@ -657,15 +719,15 @@ func _poll_job_status(job_id: String, output_root: String) -> void:
 			"failed":
 				generation_failed.emit({
 					"code": "JOB_FAILED",
-					"message": data.get("error_message", "Job failed"),
-					"stage": data.get("stage", "unknown"),
+					"message": _text_or(data.get("error_message"), "Job failed"),
+					"stage": _progress_stage(data, "unknown"),
 					"job_id": job_id
 				})
 				return
 			"cancelled":
 				generation_failed.emit({
 					"code": "CANCELLED",
-					"message": "Job was cancelled",
+					"message": _text_or(data.get("error_message"), "Job was cancelled"),
 					"job_id": job_id
 				})
 				return
@@ -675,11 +737,16 @@ func _poll_job_status(job_id: String, output_root: String) -> void:
 				poll_interval = min(poll_interval * backoff, max_interval)
 
 	# Cancelled by user
-	await cancel_job(job_id)
+	var cancel_result := await cancel_job(job_id)
+	var units_charged := 0
+	if cancel_result.get("success", false) and cancel_result.get("data") is Dictionary:
+		var charged = cancel_result["data"].get("units_charged")
+		units_charged = int(charged) if charged is int or charged is float else 0
 	generation_failed.emit({
 		"code": "CANCELLED",
-		"message": "Cancelled by user",
-		"job_id": job_id
+		"message": "Cancelled by user" if units_charged == 0 else "Cancelled by user (%d units charged)" % units_charged,
+		"job_id": job_id,
+		"units_charged": units_charged
 	})
 
 
@@ -702,33 +769,58 @@ func cancel_job(job_id: String) -> Dictionary:
 	return await _make_request(HTTPClient.METHOD_POST, endpoint)
 
 
-## Download file from URL
-func _download_file(url: String, output_path: String) -> bool:
+## Download a URL into memory: {success, status_code, body}
+func _download_file(url: String) -> Dictionary:
 	var http := HTTPRequest.new()
 	Engine.get_main_loop().root.add_child(http)
 
 	var error := http.request(url)
 	if error != OK:
 		http.queue_free()
-		return false
+		return {"success": false, "status_code": 0, "body": PackedByteArray()}
 
 	var response: Array = await http.request_completed
 	http.queue_free()
 
 	var result_code: int = response[0]
 	var status_code: int = response[1]
-	var response_body: PackedByteArray = response[3]
+	var success := result_code == HTTPRequest.RESULT_SUCCESS and status_code == 200
+	return {"success": success, "status_code": status_code, "body": response[3] if success else PackedByteArray()}
 
-	if result_code != HTTPRequest.RESULT_SUCCESS or status_code != 200:
+
+## True for failures worth retrying: no response at all, or a server error (5xx)
+static func is_transient_failure(error: Dictionary) -> bool:
+	var status_code = error.get("status_code", 0)
+	if not (status_code is int or status_code is float):
 		return false
+	return int(status_code) == 0 or int(status_code) >= 500
 
-	var file := FileAccess.open(output_path, FileAccess.WRITE)
-	if not file:
-		return false
 
-	file.store_buffer(response_body)
-	file.close()
-	return true
+## Lowercase hex SHA-256 of a buffer, as the backend reports it for each asset
+static func sha256_hex(data: PackedByteArray) -> String:
+	var ctx := HashingContext.new()
+	ctx.start(HashingContext.HASH_SHA256)
+	if not data.is_empty():
+		ctx.update(data)
+	return ctx.finish().hex_encode()
+
+
+static func _progress_percent(data: Dictionary) -> int:
+	var percent = data.get("progress_percent")
+	return int(percent) if percent is int or percent is float else 0
+
+
+## The job's progress_stage, then stage, then the fallback
+static func _progress_stage(data: Dictionary, fallback: String) -> String:
+	for key in ["progress_stage", "stage"]:
+		var value = data.get(key)
+		if value is String and not value.is_empty():
+			return value
+	return fallback
+
+
+static func _text_or(value: Variant, fallback: String) -> String:
+	return value if value is String and not value.is_empty() else fallback
 
 
 ## Compute inputs hash

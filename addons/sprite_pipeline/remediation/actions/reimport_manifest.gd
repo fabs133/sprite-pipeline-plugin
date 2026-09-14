@@ -7,8 +7,10 @@ extends RefCounted
 ## Use when: Assets were deleted, import failed, need to restore files.
 
 const ACTION_ID := "reimport_manifest"
+
 # Preloaded: .gdignore keeps the ConsentGate class name out of the global class list
 const ConsentGateScript := preload("res://addons/sprite_pipeline/remediation/consent_gate.gd")
+const ManifestPaths := preload("res://addons/sprite_pipeline/manifest_paths.gd")
 
 
 ## Execute the reimport action
@@ -43,10 +45,17 @@ func execute(consent_token: String, consent_gate: ConsentGateScript, manifest: D
 	var errors := []
 
 	for entry in results:
-		var file_path: String = entry.get("file_path", "")
+		var manifest_path: String = entry.get("file_path", "")
 		var expected_hash: String = entry.get("sha256", "")
 
+		if manifest_path.is_empty():
+			continue
+
+		# Manifest paths are relative to output_root (absolute in older BYOK manifests)
+		var file_path := ManifestPaths.resolve(output_root, manifest_path)
 		if file_path.is_empty():
+			failed += 1
+			errors.append({"path": manifest_path, "error": "unsafe_path"})
 			continue
 
 		# Check if file exists and matches hash
@@ -72,7 +81,7 @@ func execute(consent_token: String, consent_gate: ConsentGateScript, manifest: D
 			fs.scan()
 
 	# Verify action
-	var verification := verify(manifest)
+	var verification := verify(manifest, output_root)
 
 	return {
 		"success": true,
@@ -88,7 +97,7 @@ func execute(consent_token: String, consent_gate: ConsentGateScript, manifest: D
 
 
 ## Verify the action was successful
-func verify(manifest: Dictionary) -> Dictionary:
+func verify(manifest: Dictionary, output_root: String) -> Dictionary:
 	if manifest.is_empty():
 		return {"verified": false, "reason": "No manifest"}
 
@@ -97,19 +106,20 @@ func verify(manifest: Dictionary) -> Dictionary:
 	var hash_mismatches := []
 
 	for entry in results:
-		var file_path: String = entry.get("file_path", "")
+		var manifest_path: String = entry.get("file_path", "")
 		var expected_hash: String = entry.get("sha256", "")
 
-		if file_path.is_empty():
+		if manifest_path.is_empty():
 			continue
 
-		if not FileAccess.file_exists(file_path):
-			missing.append(file_path)
+		var file_path := ManifestPaths.resolve(output_root, manifest_path)
+		if file_path.is_empty() or not FileAccess.file_exists(file_path):
+			missing.append(manifest_path)
 		elif not expected_hash.is_empty():
 			var actual_hash := _compute_file_sha256(file_path)
 			if actual_hash != expected_hash:
 				hash_mismatches.append({
-					"path": file_path,
+					"path": manifest_path,
 					"expected": expected_hash.substr(0, 16) + "...",
 					"actual": actual_hash.substr(0, 16) + "..."
 				})
