@@ -96,6 +96,37 @@ func test_single_row_is_default_with_fps_and_loop() -> void:
 	check_eq(sprite_frames.get_animation_loop("default"), false, "no loop")
 
 
+func test_rebuild_into_replaces_the_animations_of_the_given_instance() -> void:
+	var target := SpriteFrames.new()
+	target.add_animation(&"walk")
+	target.set_animation_speed(&"default", 3.0)
+	var sheet := _sheet(128, 64)
+	check(Builder.rebuild_into(target, _result(4, 2), sheet, 12.0, false) == target, "returns the instance it was given")
+	check_eq(target.get_animation_names(), PackedStringArray(["row_0", "row_1"]), "old animations removed, one per row added")
+	check_eq(target.get_frame_count("row_1"), 4, "frame count")
+	check_eq(target.get_animation_speed("row_1"), 12.0, "fps")
+	check_eq(target.get_animation_loop("row_1"), false, "no loop")
+	check_eq(target.get_meta(Builder.GENERATED_META, false), true, "generated flag")
+
+	check(Builder.rebuild_into(target, _result(4, 1), sheet, 8.0, true) == target, "rebuilt again")
+	check_eq(target.get_animation_names(), PackedStringArray(["default"]), "fewer rows")
+	check_eq(target.get_frame_count("default"), 4, "frame count after the second rebuild")
+	check_eq(target.get_animation_speed("default"), 8.0, "fps after the second rebuild")
+
+
+func test_rebuild_into_leaves_the_instance_alone_for_a_mismatched_result() -> void:
+	var target := Builder.build(_result(4, 1), _sheet(128, 32), 8.0, true)
+	check(target != null, "built")
+	if target == null:
+		return
+	check(Builder.rebuild_into(target, _result(4, 2), _sheet(128, 32), 12.0, false) == null, "sheet shorter than the rows")
+	check(Builder.rebuild_into(target, _result(1, 1), _sheet(32, 32), 12.0, false) == null, "a still")
+	check_eq(target.get_animation_names(), PackedStringArray(["default"]), "animations unchanged")
+	check_eq(target.get_frame_count("default"), 4, "frames unchanged")
+	check_eq(target.get_animation_speed("default"), 8.0, "fps unchanged")
+	check(Builder.rebuild_into(null, _result(4, 1), _sheet(128, 32), 8.0, true) == null, "no target")
+
+
 func test_animation_names() -> void:
 	check_eq(Builder.animation_names(_result(4, 1)), PackedStringArray(["default"]), "single row")
 	check_eq(Builder.animation_names(_result(4, 3)), PackedStringArray(["row_0", "row_1", "row_2"]), "rows")

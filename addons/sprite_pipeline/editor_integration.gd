@@ -109,6 +109,11 @@ static func pin_import_params(png_paths: PackedStringArray) -> PackedStringArray
 ## replaced when the plugin wrote it, or with overwrite; any other existing <sheet>.tres
 ## is kept and <sheet>.generated.tres written. Returns {path: SpriteFramesWriter action}
 ## for the files written, in manifest order.
+##
+## When the editor already holds the SpriteFrames of the file to write (open in the
+## SpriteFrames panel, used by an open scene), that instance is rebuilt and saved. A new
+## resource saved over the file would leave the editor with the old frames, and its next
+## save would write them back.
 static func write_spriteframes(manifest: Dictionary, output_root: String, fps: float, loop: bool, overwrite := false) -> Dictionary:
 	var written := {}
 	var results: Array = manifest["results"] if manifest.get("results") is Array else []
@@ -122,11 +127,11 @@ static func write_spriteframes(manifest: Dictionary, output_root: String, fps: f
 			push_warning("[SpritePipeline] %s is not imported; no SpriteFrames written for it" % sheet_path)
 			continue
 		var sheet := ResourceLoader.load(sheet_path, "Texture2D") as Texture2D
-		var sprite_frames := SpriteFramesBuilder.build(result, sheet, fps, loop)
+		var target := spriteframes_target(sheet_path, overwrite)
+		var sprite_frames := SpriteFramesBuilder.rebuild_into(_spriteframes_at(target["path"]), result, sheet, fps, loop)
 		if sprite_frames == null:
 			push_warning("[SpritePipeline] %s does not match the frames in its manifest entry; no SpriteFrames written for it" % sheet_path)
 			continue
-		var target := spriteframes_target(sheet_path, overwrite)
 		var err := ResourceSaver.save(sprite_frames, target["path"])
 		if err != OK:
 			push_warning("[SpritePipeline] Could not save %s: %s" % [target["path"], error_string(err)])
@@ -136,18 +141,25 @@ static func write_spriteframes(manifest: Dictionary, output_root: String, fps: f
 
 
 ## Where the SpriteFrames for a sheet go: {path, action}, with the action from
-## SpriteFramesWriter.decide for the existing <sheet>.tres
+## SpriteFramesWriter.decide for the existing <sheet>.tres. A <sheet>.tres the editor
+## holds counts as existing even when its file is gone.
 static func spriteframes_target(sheet_path: String, overwrite: bool) -> Dictionary:
 	var path := sheet_path.get_basename() + ".tres"
-	var exists := FileAccess.file_exists(path)
+	var exists := FileAccess.file_exists(path) or ResourceLoader.has_cached(path)
 	var action := SpriteFramesWriter.decide(exists and written_by_plugin(path), exists, overwrite)
 	return {"path": SpriteFramesWriter.target_path(sheet_path, action), "action": action}
 
 
-## True if the file at path is a SpriteFrames the plugin built. Read from disk without
-## the resource cache, so an instance open in the editor is left alone.
+## True if the resource at path is a SpriteFrames the plugin built. When the editor holds
+## the resource, its instance decides, because that is what the editor saves: metadata
+## deleted in the inspector counts before the resource is saved. Otherwise the file is
+## read from disk without filling the resource cache.
 static func written_by_plugin(path: String) -> bool:
-	var resource := ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE)
+	var resource: Resource
+	if ResourceLoader.has_cached(path):
+		resource = ResourceLoader.load(path)
+	else:
+		resource = ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE)
 	return resource is SpriteFrames and resource.get_meta(SpriteFramesBuilder.GENERATED_META, false) == true
 
 
@@ -159,6 +171,16 @@ static func navigate_to(path: String) -> void:
 
 static func _filesystem() -> EditorFileSystem:
 	return EditorInterface.get_resource_filesystem() if is_editor() else null
+
+
+## The SpriteFrames to save at path: the instance the editor holds for the file, or a new
+## one when no SpriteFrames of that path is in the resource cache
+static func _spriteframes_at(path: String) -> SpriteFrames:
+	if ResourceLoader.has_cached(path):
+		var cached := ResourceLoader.load(path) as SpriteFrames
+		if cached != null:
+			return cached
+	return SpriteFrames.new()
 
 
 static func _is_busy(filesystem: EditorFileSystem) -> bool:

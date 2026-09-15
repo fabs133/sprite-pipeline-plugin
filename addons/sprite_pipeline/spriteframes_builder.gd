@@ -8,7 +8,8 @@ extends RefCounted
 ## and rows * frame_h high, with the cells row-major from the top left. A raw 1024x1024
 ## sheet has the same cells in its top-left corner.
 ##
-## Pure functions: the sheet texture comes in, nothing is loaded or saved.
+## Nothing is loaded or saved: the sheet texture comes in, and rebuild_into changes only
+## the SpriteFrames passed to it.
 
 const Version := preload("res://addons/sprite_pipeline/version.gd")
 ## Metadata set on every SpriteFrames the plugin builds; regenerating replaces a .tres
@@ -26,33 +27,41 @@ static func is_animated(result: Dictionary) -> bool:
 ## SpriteFrames for result, cut from sheet. null for a single still, a result without a
 ## frame size, or a sheet smaller than the frames the result describes.
 static func build(result: Dictionary, sheet: Texture2D, fps: float, loop: bool) -> SpriteFrames:
+	return rebuild_into(SpriteFrames.new(), result, sheet, fps, loop)
+
+
+## Turn target into what build returns for result: every animation on target is removed,
+## the ones for result are added and the plugin's metadata is set. For a SpriteFrames the
+## editor already holds, so the editor keeps its instance and that instance has the new
+## frames. Returns target, or null with target unchanged where build returns null.
+static func rebuild_into(target: SpriteFrames, result: Dictionary, sheet: Texture2D, fps: float, loop: bool) -> SpriteFrames:
 	var frames := _count(result.get("frames"), 1)
 	var rows := _count(result.get("rows"), 1)
-	if not is_animated(result) or frames < 1 or rows < 1 or sheet == null:
+	if target == null or not is_animated(result) or frames < 1 or rows < 1 or sheet == null:
 		return null
 	var last := region(result, rows - 1, frames - 1)
 	if last.size.x < 1 or last.size.y < 1 or last.end.x > sheet.get_width() or last.end.y > sheet.get_height():
 		return null
 
-	var sprite_frames := SpriteFrames.new()
-	sprite_frames.set_meta(GENERATED_META, true)
-	sprite_frames.set_meta(VERSION_META, Version.PLUGIN)
-	# A new SpriteFrames starts with an empty "default" animation
-	sprite_frames.remove_animation(&"default")
+	target.set_meta(GENERATED_META, true)
+	target.set_meta(VERSION_META, Version.PLUGIN)
+	# Includes the empty "default" animation a new SpriteFrames starts with
+	for animation: String in target.get_animation_names():
+		target.remove_animation(animation)
 	var names := animation_names(result)
 	for row in rows:
 		var animation := StringName(names[row])
-		sprite_frames.add_animation(animation)
-		sprite_frames.set_animation_speed(animation, fps)
-		sprite_frames.set_animation_loop(animation, loop)
+		target.add_animation(animation)
+		target.set_animation_speed(animation, fps)
+		target.set_animation_loop(animation, loop)
 		for column in frames:
 			var frame := AtlasTexture.new()
 			frame.atlas = sheet
 			frame.region = Rect2(region(result, row, column))
 			# Keeps the neighbouring cells' pixels out of the frame's edges when filtered
 			frame.filter_clip = true
-			sprite_frames.add_frame(animation, frame)
-	return sprite_frames
+			target.add_frame(animation, frame)
+	return target
 
 
 ## The sheet region of the frame in row and column

@@ -230,6 +230,10 @@ an `AnimatedSprite2D`'s **Sprite Frames**.
   `.tres` is kept unless `overwrite_spriteframes` is on, and the new resource is
   saved as `<name>.generated.tres` instead. The status line says which files were
   written, updated or saved as `.generated.tres`.
+- When the editor has the `.tres` loaded (open in the SpriteFrames panel or used by
+  an open scene), the plugin rebuilds that loaded resource and saves it, so a later
+  save in the editor keeps the new frames. The loaded resource's metadata decides:
+  deleting it in the inspector keeps your edits even before you save.
 
 The results list the files written; click one to select it in the FileSystem dock.
 
