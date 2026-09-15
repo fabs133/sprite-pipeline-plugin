@@ -70,12 +70,41 @@ if ($Mode -eq "prod") {
     Get-ChildItem -Path $pluginDir -Filter "__pycache__" -Recurse | Remove-Item -Force -Recurse
 }
 
-# Create ZIP
+# Create ZIP. Entry names are built here with "/" separators: Compress-Archive in
+# Windows PowerShell 5.1 writes "\", which unzip on Linux and macOS keeps as part of
+# the file name, so the plugin would not load.
 Write-Host "Creating ZIP archive..." -ForegroundColor Gray
-Compress-Archive -Path "$tempDir\addons" -DestinationPath $outputFile -Force
+Add-Type -AssemblyName System.IO.Compression
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+# .NET resolves relative paths against the process directory, not the PowerShell location
+$zipPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($outputFile)
+$root = $tempDir.FullName
+$addonsDir = Join-Path $root "addons"
+$directories = @($addonsDir) + [System.IO.Directory]::GetDirectories($addonsDir, "*", [System.IO.SearchOption]::AllDirectories) | Sort-Object
+$files = [System.IO.Directory]::GetFiles($addonsDir, "*", [System.IO.SearchOption]::AllDirectories) | Sort-Object
+$archive = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Create)
+try {
+    foreach ($directory in $directories) {
+        $entryName = $directory.Substring($root.Length + 1).Replace('\', '/') + "/"
+        $archive.CreateEntry($entryName) | Out-Null
+    }
+    foreach ($file in $files) {
+        $entryName = $file.Substring($root.Length + 1).Replace('\', '/')
+        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $file, $entryName, [System.IO.Compression.CompressionLevel]::Optimal) | Out-Null
+    }
+} finally {
+    $archive.Dispose()
+}
 
 # Cleanup
 Remove-Item $tempDir -Recurse -Force
+
+# Check the entry names before anything publishes the ZIP
+& "$PSScriptRoot\verify-zip.ps1" -Path $outputFile
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Build failed: the ZIP did not pass verify-zip.ps1" -ForegroundColor Red
+    exit 1
+}
 
 # Get file info
 $fileInfo = Get-Item $outputFile

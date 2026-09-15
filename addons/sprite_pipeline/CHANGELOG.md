@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Saved settings pointing at the retired `sprites.pi-agents.dev` service are cleared on load.
 - The remediation actions failed to compile.
 - A confirmed consent dialog returned no consent token, so the action was treated as declined.
+- The release ZIP names its entries with `/`. Built with Windows PowerShell 5.1, the names had `\`, which unzip on Linux and macOS keeps as part of the file name, so the addon did not load.
 
 ### Security
 - Asset paths returned by a Pool server are confined to the output directory. Previously a `../` path could overwrite project files, including editor scripts.

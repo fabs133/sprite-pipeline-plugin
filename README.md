@@ -89,6 +89,10 @@ build locally (output goes to `dist/`, which is gitignored):
 .\scripts\build.ps1 -Mode prod -Version 1.1.0
 ```
 
+`build.ps1` checks the finished ZIP with `scripts/verify-zip.ps1` and fails if an entry
+name contains `\`, `addons/sprite_pipeline/plugin.cfg` is missing or an entry starts
+with `tests/`.
+
 Validation:
 
 ```bash
