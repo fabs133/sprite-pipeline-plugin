@@ -12,6 +12,7 @@ const SETTINGS_PATH := "user://sprite_pipeline_settings.cfg"
 const RETIRED_POOL_HOSTS := ["sprites.pi-agents.dev"]
 const Version := preload("res://addons/sprite_pipeline/version.gd")
 const ManifestPaths := preload("res://addons/sprite_pipeline/manifest_paths.gd")
+const SettingsStore := preload("res://addons/sprite_pipeline/settings_store.gd")
 
 # Automation server for test system integration
 const AutomationServer := preload("res://addons/sprite_pipeline/api/automation_server.gd")
@@ -708,39 +709,48 @@ func _load_settings() -> void:
 			_save_settings()
 
 
+## Write the dock's settings into the settings file; keys the dock doesn't own, such as
+## [dev] enable_automation, stay as they are
 func _save_settings() -> void:
-	var config := ConfigFile.new()
-	config.set_value("general", "mode", _current_mode)
-	config.set_value("general", "queue_path", queue_path_edit.text)
-	config.set_value("general", "output_root", output_path_edit.text)
-	config.set_value("general", "global_style", style_edit.text)
-	config.set_value("byok", "api_key", api_key_edit.text)
-	config.set_value("byok", "image_model", _selected_image_model())
-	config.set_value("byok", "image_quality", _selected_image_quality())
-	config.set_value("pool", "server_url", server_edit.text)
+	var general := {
+		"mode": _current_mode,
+		"queue_path": queue_path_edit.text,
+		"output_root": output_path_edit.text,
+		"global_style": style_edit.text,
+	}
+	var byok := {
+		"api_key": api_key_edit.text,
+		"image_model": _selected_image_model(),
+		"image_quality": _selected_image_quality(),
+	}
+	var pool := {"server_url": server_edit.text}
 	if download_raw_check:
-		config.set_value("pool", "download_raw", download_raw_check.button_pressed)
+		pool["download_raw"] = download_raw_check.button_pressed
 
-	if _pool_client and _pool_client.is_authenticated():
-		config.set_value("pool", "access_token", _pool_client._access_token)
-		config.set_value("pool", "refresh_token", _pool_client._refresh_token)
-		config.set_value("pool", "token_expires_at", _pool_client._token_expires_at)
+	# Without a login the tokens leave the file (null removes a key), as after an auth
+	# reset or when a retired server was cleared
+	var authenticated: bool = _pool_client != null and _pool_client.is_authenticated()
+	pool["access_token"] = _pool_client._access_token if authenticated else null
+	pool["refresh_token"] = _pool_client._refresh_token if authenticated else null
+	pool["token_expires_at"] = _pool_client._token_expires_at if authenticated else null
 
-	config.set_value("editor", "filter_prompt_dismissed", _filter_prompt_dismissed)
-	config.set_value("editor", "pin_import_params", _pin_import_params)
+	var editor := {
+		"filter_prompt_dismissed": _filter_prompt_dismissed,
+		"pin_import_params": _pin_import_params,
+		"spriteframes_loop": _spriteframes_loop,
+		"overwrite_spriteframes": _overwrite_spriteframes,
+	}
 	if write_spriteframes_check:
-		config.set_value("editor", "write_spriteframes", write_spriteframes_check.button_pressed)
+		editor["write_spriteframes"] = write_spriteframes_check.button_pressed
 	if spriteframes_fps_spin:
-		config.set_value("editor", "spriteframes_fps", spriteframes_fps_spin.value)
-	config.set_value("editor", "spriteframes_loop", _spriteframes_loop)
-	config.set_value("editor", "overwrite_spriteframes", _overwrite_spriteframes)
+		editor["spriteframes_fps"] = spriteframes_fps_spin.value
 
+	var values := {"general": general, "byok": byok, "pool": pool, "editor": editor}
 	# Save cache settings
 	if _sprite_cache:
-		config.set_value("cache", "enabled", _sprite_cache.enabled)
-		config.set_value("cache", "max_size_mb", _sprite_cache.max_size_mb)
+		values["cache"] = {"enabled": _sprite_cache.enabled, "max_size_mb": _sprite_cache.max_size_mb}
 
-	config.save(SETTINGS_PATH)
+	SettingsStore.save(SETTINGS_PATH, values)
 
 
 func _update_ui_for_mode() -> void:
