@@ -224,9 +224,12 @@ an `AnimatedSprite2D`'s **Sprite Frames**.
 - Each frame is an `AtlasTexture` region of the sheet with **Filter Clip** on, so
   pixels of the neighbouring frames don't bleed into its edges.
 - Animations play at the **FPS** set in the dock (8 by default) and loop.
-- An existing `.tres` is never replaced unless `overwrite_spriteframes` is on; the
-  new resource is saved as `<name>.generated.tres` instead, and the status line
-  says so.
+- Regenerating a sprite replaces the `.tres` the plugin wrote, which it recognizes
+  by its `sprite_pipeline_generated` metadata; edits you made to that resource are
+  replaced too, unless you delete the metadata in the inspector. Any other existing
+  `.tres` is kept unless `overwrite_spriteframes` is on, and the new resource is
+  saved as `<name>.generated.tres` instead. The status line says which files were
+  written, updated or saved as `.generated.tres`.
 
 The results list the files written; click one to select it in the FileSystem dock.
 
@@ -306,8 +309,9 @@ node whose own **Texture Filter** is Linear stays blurry.
 
 ### A `.generated.tres` file appeared
 
-The sheet already had a `.tres`, which the plugin doesn't replace. Delete the old
-file and rename the new one, or set `overwrite_spriteframes=true` (see
+The sheet already had a `.tres` that the plugin didn't write, or whose
+`sprite_pipeline_generated` metadata was deleted, so the plugin kept it. Delete the
+old file and rename the new one, or set `overwrite_spriteframes=true` (see
 [Turning it off](#turning-it-off)).
 
 ### Cached results look wrong

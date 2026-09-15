@@ -10,6 +10,13 @@ extends RefCounted
 ##
 ## Pure functions: the sheet texture comes in, nothing is loaded or saved.
 
+const Version := preload("res://addons/sprite_pipeline/version.gd")
+## Metadata set on every SpriteFrames the plugin builds; regenerating replaces a .tres
+## that has it (SpriteFramesWriter)
+const GENERATED_META := &"sprite_pipeline_generated"
+## Metadata with the version of the plugin that built the resource
+const VERSION_META := &"sprite_pipeline_version"
+
 
 ## True for a result with more than one frame; a single still needs no SpriteFrames
 static func is_animated(result: Dictionary) -> bool:
@@ -28,6 +35,8 @@ static func build(result: Dictionary, sheet: Texture2D, fps: float, loop: bool) 
 		return null
 
 	var sprite_frames := SpriteFrames.new()
+	sprite_frames.set_meta(GENERATED_META, true)
+	sprite_frames.set_meta(VERSION_META, Version.PLUGIN)
 	# A new SpriteFrames starts with an empty "default" animation
 	sprite_frames.remove_animation(&"default")
 	var names := animation_names(result)

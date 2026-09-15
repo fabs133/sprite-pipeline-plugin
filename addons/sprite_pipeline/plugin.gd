@@ -94,7 +94,7 @@ func _save_default_settings() -> void:
 	config.set_value("editor", "write_spriteframes", true)  # Save a SpriteFrames .tres next to each animated sheet
 	config.set_value("editor", "spriteframes_fps", 8.0)
 	config.set_value("editor", "spriteframes_loop", true)
-	config.set_value("editor", "overwrite_spriteframes", false)  # false: an existing <name>.tres is kept and <name>.generated.tres written
+	config.set_value("editor", "overwrite_spriteframes", false)  # false: an existing <name>.tres the plugin didn't write is kept and <name>.generated.tres written
 	config.save(_settings_path)
 
 

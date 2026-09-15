@@ -17,9 +17,8 @@ const SCAN_TIMEOUT_MSEC := 10000
 
 const ImportParams := preload("res://addons/sprite_pipeline/import_params.gd")
 const SpriteFramesBuilder := preload("res://addons/sprite_pipeline/spriteframes_builder.gd")
+const SpriteFramesWriter := preload("res://addons/sprite_pipeline/spriteframes_writer.gd")
 const ManifestPaths := preload("res://addons/sprite_pipeline/manifest_paths.gd")
-## File name ending used instead of .tres when <sheet>.tres exists and must not be replaced
-const GENERATED_SUFFIX := ".generated.tres"
 
 
 static func is_editor() -> bool:
@@ -106,11 +105,12 @@ static func pin_import_params(png_paths: PackedStringArray) -> PackedStringArray
 
 
 ## Save a SpriteFrames resource next to each animated sheet in the manifest. The sheets
-## must be imported already, so that loading them returns a texture. An existing
-## <sheet>.tres is replaced only with overwrite; otherwise <sheet>.generated.tres is
-## written. Returns the paths written.
-static func write_spriteframes(manifest: Dictionary, output_root: String, fps: float, loop: bool, overwrite := false) -> PackedStringArray:
-	var written := PackedStringArray()
+## must be imported already, so that loading them returns a texture. <sheet>.tres is
+## replaced when the plugin wrote it, or with overwrite; any other existing <sheet>.tres
+## is kept and <sheet>.generated.tres written. Returns {path: SpriteFramesWriter action}
+## for the files written, in manifest order.
+static func write_spriteframes(manifest: Dictionary, output_root: String, fps: float, loop: bool, overwrite := false) -> Dictionary:
+	var written := {}
 	var results: Array = manifest["results"] if manifest.get("results") is Array else []
 	for result in results:
 		if not result is Dictionary or not SpriteFramesBuilder.is_animated(result):
@@ -126,22 +126,29 @@ static func write_spriteframes(manifest: Dictionary, output_root: String, fps: f
 		if sprite_frames == null:
 			push_warning("[SpritePipeline] %s does not match the frames in its manifest entry; no SpriteFrames written for it" % sheet_path)
 			continue
-		var target := spriteframes_path(sheet_path, overwrite)
-		var err := ResourceSaver.save(sprite_frames, target)
+		var target := spriteframes_target(sheet_path, overwrite)
+		var err := ResourceSaver.save(sprite_frames, target["path"])
 		if err != OK:
-			push_warning("[SpritePipeline] Could not save %s: %s" % [target, error_string(err)])
+			push_warning("[SpritePipeline] Could not save %s: %s" % [target["path"], error_string(err)])
 			continue
-		written.append(target)
+		written[target["path"]] = target["action"]
 	return written
 
 
-## Where the SpriteFrames for a sheet go: <sheet>.tres, or <sheet>.generated.tres when
-## <sheet>.tres exists and overwrite is off
-static func spriteframes_path(sheet_path: String, overwrite: bool) -> String:
+## Where the SpriteFrames for a sheet go: {path, action}, with the action from
+## SpriteFramesWriter.decide for the existing <sheet>.tres
+static func spriteframes_target(sheet_path: String, overwrite: bool) -> Dictionary:
 	var path := sheet_path.get_basename() + ".tres"
-	if overwrite or not FileAccess.file_exists(path):
-		return path
-	return sheet_path.get_basename() + GENERATED_SUFFIX
+	var exists := FileAccess.file_exists(path)
+	var action := SpriteFramesWriter.decide(exists and written_by_plugin(path), exists, overwrite)
+	return {"path": SpriteFramesWriter.target_path(sheet_path, action), "action": action}
+
+
+## True if the file at path is a SpriteFrames the plugin built. Read from disk without
+## the resource cache, so an instance open in the editor is left alone.
+static func written_by_plugin(path: String) -> bool:
+	var resource := ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE)
+	return resource is SpriteFrames and resource.get_meta(SpriteFramesBuilder.GENERATED_META, false) == true
 
 
 ## Select a file in the FileSystem dock

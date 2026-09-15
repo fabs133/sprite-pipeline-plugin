@@ -24,6 +24,7 @@ const SpriteCacheClass := preload("res://addons/sprite_pipeline/cache/sprite_cac
 const EditorIntegration := preload("res://addons/sprite_pipeline/editor_integration.gd")
 const ConsentGate := preload("res://addons/sprite_pipeline/remediation/consent_gate.gd")
 const ImportParams := preload("res://addons/sprite_pipeline/import_params.gd")
+const SpriteFramesWriter := preload("res://addons/sprite_pipeline/spriteframes_writer.gd")
 
 # Node references (set in _ready)
 @onready var byok_button: Button = $ModeSection/ModeButtons/BYOKButton
@@ -1192,27 +1193,36 @@ func _import_generated_files(manifest: Dictionary) -> void:
 			status_text.text += " Import settings pinned for %d files" % pinned.size()
 	if write_spriteframes_check and write_spriteframes_check.button_pressed:
 		var written = _editor.write_spriteframes(manifest, output_root, spriteframes_fps_spin.value, _spriteframes_loop, _overwrite_spriteframes)
-		if written is PackedStringArray and not written.is_empty():
+		if written is Dictionary and not written.is_empty():
 			# Show the new .tres files in the FileSystem dock
 			_editor.scan()
 			_show_spriteframes_links(written, output_root)
 
 
-## Count the written SpriteFrames in the results and link each file to the FileSystem dock
-func _show_spriteframes_links(paths: PackedStringArray, output_root: String) -> void:
-	results_label.text += ", %d SpriteFrames written" % paths.size()
-	var generated := 0
-	for path in paths:
-		if path.ends_with(EditorIntegration.GENERATED_SUFFIX):
-			generated += 1
+## Count the saved SpriteFrames in the results, say in the status which were written,
+## updated or saved as .generated.tres, and link each file to the FileSystem dock.
+## written is {path: SpriteFramesWriter action}, as write_spriteframes returns it.
+func _show_spriteframes_links(written: Dictionary, output_root: String) -> void:
+	results_label.text += ", %d SpriteFrames saved" % written.size()
+	var counts := {SpriteFramesWriter.WRITE: 0, SpriteFramesWriter.UPDATE: 0, SpriteFramesWriter.GENERATED: 0}
+	for path: String in written:
+		if counts.has(written[path]):
+			counts[written[path]] += 1
 		var relative := ManifestPaths.relative_to(output_root, path)
 		var link := LinkButton.new()
 		link.text = relative if not relative.is_empty() else path
 		link.tooltip_text = path
 		link.pressed.connect(_on_spriteframes_link_pressed.bind(path))
 		spriteframes_links.add_child(link)
-	if generated > 0:
-		status_text.text += " %d SpriteFrames saved as .generated.tres because a .tres already existed" % generated
+	var parts := PackedStringArray()
+	if counts[SpriteFramesWriter.WRITE] > 0:
+		parts.append("%d written" % counts[SpriteFramesWriter.WRITE])
+	if counts[SpriteFramesWriter.UPDATE] > 0:
+		parts.append("%d updated" % counts[SpriteFramesWriter.UPDATE])
+	if counts[SpriteFramesWriter.GENERATED] > 0:
+		parts.append("%d written as .generated.tres next to a .tres the plugin didn't write" % counts[SpriteFramesWriter.GENERATED])
+	if not parts.is_empty():
+		status_text.text += " SpriteFrames: " + ", ".join(parts)
 
 
 func _clear_spriteframes_links() -> void:

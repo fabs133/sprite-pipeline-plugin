@@ -3,6 +3,7 @@ extends "res://tests/test_case.gd"
 
 const DockScene := preload("res://addons/sprite_pipeline/ui/main_dock.tscn")
 const StubEditor := preload("res://tests/stub_editor.gd")
+const Writer := preload("res://addons/sprite_pipeline/spriteframes_writer.gd")
 const SETTINGS_PATH := "user://sprite_pipeline_settings.cfg"
 const ROOT := "res://assets/sprites"
 const MANIFEST := {"version": 2, "errors": [], "results": [
@@ -67,7 +68,11 @@ func test_pinning_can_be_turned_off() -> void:
 
 func test_spriteframes_are_written_scanned_and_linked() -> void:
 	var stub := StubEditor.new()
-	stub.spriteframes = PackedStringArray([ROOT + "/characters/hero.tres", ROOT + "/monsters/slime.generated.tres"])
+	stub.spriteframes = {
+		ROOT + "/characters/hero.tres": Writer.WRITE,
+		ROOT + "/monsters/slime.tres": Writer.UPDATE,
+		ROOT + "/monsters/bat.generated.tres": Writer.GENERATED,
+	}
 	var dock := _dock(stub)
 	dock.spriteframes_fps_spin.set_value_no_signal(12.0)
 	dock._spriteframes_loop = false
@@ -75,20 +80,30 @@ func test_spriteframes_are_written_scanned_and_linked() -> void:
 	await dock._on_generation_completed(MANIFEST)
 	check_eq(str(stub.calls), str(["scan_and_wait", "pin_import_params", "write_spriteframes", "scan"]), "scan again after writing")
 	check_eq(str(stub.spriteframes_args), str([ROOT, 12.0, false, true]), "output root, fps, loop, overwrite")
-	check_eq(dock.results_label.text, "Results: 1 success, 0 errors, 2 SpriteFrames written", "results")
-	check_eq(dock.status_text.text, "Generation complete! 1 SpriteFrames saved as .generated.tres because a .tres already existed", "status")
+	check_eq(dock.results_label.text, "Results: 1 success, 0 errors, 3 SpriteFrames saved", "results")
+	check_eq(dock.status_text.text, "Generation complete! SpriteFrames: 1 written, 1 updated, 1 written as .generated.tres next to a .tres the plugin didn't write", "status")
 	var links: Array[Node] = dock.spriteframes_links.get_children()
-	check_eq(links.size(), 2, "one link per file")
-	if links.size() == 2:
+	check_eq(links.size(), 3, "one link per file")
+	if links.size() == 3:
 		check_eq(links[0].text, "characters/hero.tres", "link text relative to the output root")
-		links[1].pressed.emit()
-		check_eq(stub.navigated, ROOT + "/monsters/slime.generated.tres", "a link selects its file in the FileSystem dock")
+		links[2].pressed.emit()
+		check_eq(stub.navigated, ROOT + "/monsters/bat.generated.tres", "a link selects its file in the FileSystem dock")
+	dock.free()
+
+
+func test_a_regeneration_reports_updated_spriteframes() -> void:
+	var stub := StubEditor.new()
+	stub.spriteframes = {ROOT + "/characters/hero.tres": Writer.UPDATE}
+	var dock := _dock(stub)
+	await dock._on_generation_completed(MANIFEST)
+	check_eq(dock.results_label.text, "Results: 1 success, 0 errors, 1 SpriteFrames saved", "results")
+	check_eq(dock.status_text.text, "Generation complete! SpriteFrames: 1 updated", "status")
 	dock.free()
 
 
 func test_spriteframes_can_be_turned_off() -> void:
 	var stub := StubEditor.new()
-	stub.spriteframes = PackedStringArray([ROOT + "/characters/hero.tres"])
+	stub.spriteframes = {ROOT + "/characters/hero.tres": Writer.WRITE}
 	var dock := _dock(stub)
 	dock.write_spriteframes_check.set_pressed_no_signal(false)
 	await dock._on_generation_completed(MANIFEST)
@@ -119,11 +134,11 @@ func test_a_failed_spriteframes_write_keeps_the_results() -> void:
 
 func test_the_next_generation_clears_the_links() -> void:
 	var stub := StubEditor.new()
-	stub.spriteframes = PackedStringArray([ROOT + "/characters/hero.tres"])
+	stub.spriteframes = {ROOT + "/characters/hero.tres": Writer.WRITE}
 	var dock := _dock(stub)
 	await dock._on_generation_completed(MANIFEST)
 	check_eq(dock.spriteframes_links.get_child_count(), 1, "link after the first run")
-	stub.spriteframes = PackedStringArray()
+	stub.spriteframes = {}
 	await dock._on_generation_completed(MANIFEST)
 	check_eq(dock.spriteframes_links.get_child_count(), 0, "no stale link after the second run")
 	dock.free()

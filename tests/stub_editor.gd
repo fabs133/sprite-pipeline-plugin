@@ -54,8 +54,8 @@ func pin_import_params(png_paths: PackedStringArray) -> PackedStringArray:
 	return pinned
 
 
-## Returned by write_spriteframes
-var spriteframes := PackedStringArray()
+## Returned by write_spriteframes: {path: SpriteFramesWriter action}
+var spriteframes := {}
 ## write_spriteframes returns null, as a call that failed with a script error would
 var fail_spriteframes := false
 ## Arguments of the last write_spriteframes call: [output_root, fps, loop, overwrite]

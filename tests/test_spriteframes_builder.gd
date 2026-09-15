@@ -2,6 +2,22 @@ extends "res://tests/test_case.gd"
 
 const Builder := preload("res://addons/sprite_pipeline/spriteframes_builder.gd")
 const Postprocess := preload("res://addons/sprite_pipeline/postprocess.gd")
+const Version := preload("res://addons/sprite_pipeline/version.gd")
+
+
+func test_built_resource_carries_the_plugin_metadata() -> void:
+	var sprite_frames := Builder.build(_result(4, 1), _sheet(128, 32), 8.0, true)
+	check(sprite_frames != null, "built")
+	if sprite_frames == null:
+		return
+	check_eq(sprite_frames.get_meta(Builder.GENERATED_META, false), true, "generated flag")
+	check_eq(sprite_frames.get_meta(Builder.VERSION_META, ""), Version.PLUGIN, "plugin version")
+	var root := make_temp_dir("spriteframes_meta")
+	var path := root.path_join("hero.tres")
+	check_eq(ResourceSaver.save(sprite_frames, path), OK, "saved")
+	var loaded := ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE)
+	check(loaded is SpriteFrames and loaded.get_meta(Builder.GENERATED_META, false) == true, "the flag is saved with the resource")
+	remove_dir(root)
 
 
 func _color(row: int, column: int) -> Color:
