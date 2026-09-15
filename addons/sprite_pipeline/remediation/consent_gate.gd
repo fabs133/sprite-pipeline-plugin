@@ -33,7 +33,7 @@ const ACTION_CATALOG := {
 		"requires_consent": true,
 		"changes": ["Sets rendering/textures/canvas_textures/default_texture_filter in project.godot", "Affects all 2D textures"],
 		"title": "Pixel-Art Filtering",
-		"dialog_text": "Your project uses Linear texture filtering, which blurs pixel art. Set the project default to Nearest? This changes one line in project.godot and affects all 2D textures. (You can change it back under Project Settings → Rendering → Textures.)",
+		"dialog_text": "Your project uses Linear texture filtering, which blurs pixel art. Set the project default to Nearest? This adds a texture-filter setting to project.godot and affects all 2D textures. (You can change it back under Project Settings → Rendering → Textures.)",
 		"ok_text": "Set to Nearest",
 		"cancel_text": "Not now",
 		"dont_ask_again": true,
